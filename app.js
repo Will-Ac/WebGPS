@@ -2,6 +2,11 @@
   const FALLBACK_CENTER = [39.8283, -98.5795];
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
+  const MAX_MAP_ZOOM = 19;
+  const MOCK_DRONE_POSITION = {
+    latitude: 51.4733071,
+    longitude: -2.5859117
+  };
 
   function setStatusMessage(message) {
     const statusEl = document.getElementById('status-message');
@@ -10,18 +15,19 @@
 
   function createMap() {
     const map = L.map('map', {
-      zoomControl: true
+      zoomControl: true,
+      maxZoom: MAX_MAP_ZOOM
     }).setView(FALLBACK_CENTER, FALLBACK_ZOOM);
 
     const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
+      maxZoom: MAX_MAP_ZOOM,
       attribution: '&copy; OpenStreetMap contributors'
     });
 
     const satelliteLayer = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       {
-        maxZoom: 18,
+        maxZoom: MAX_MAP_ZOOM,
         attribution: 'Tiles &copy; Esri'
       }
     );
@@ -51,6 +57,18 @@
   function placeCurrentLocationMarker(map, lat, lng) {
     const marker = L.marker([lat, lng]).addTo(map);
     marker.bindPopup('Current device position').openPopup();
+    return marker;
+  }
+
+  function placeMockDroneMarker(map) {
+    const marker = L.circleMarker([MOCK_DRONE_POSITION.latitude, MOCK_DRONE_POSITION.longitude], {
+      radius: 8,
+      color: '#c62828',
+      fillColor: '#e53935',
+      fillOpacity: 0.95,
+      weight: 2
+    }).addTo(map);
+    marker.bindPopup('Mock drone position');
     return marker;
   }
 
@@ -84,5 +102,6 @@
   }
 
   const map = createMap();
+  placeMockDroneMarker(map);
   requestCurrentLocation(map);
 })();
