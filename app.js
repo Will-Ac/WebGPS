@@ -272,20 +272,27 @@
 
   function setupRotationSystem(map) {
     const mapPane = map.getPane('mapPane');
+    const mapContainer = map.getContainer();
+    const ROTATION_ENGAGE_THRESHOLD_DEGREES = 20;
     const rotationState = {
       angle: 0,
-      gestureStartAngle: 0,
+      gestureBaselineAngle: 0,
       gestureStartBearing: 0,
       isRotatingTouch: false,
+      isRotateEngagedForGesture: false,
       headingFollowEnabled: false,
       headingOffset: null,
       lastKnownHeading: null
     };
 
-    function setBearing(nextBearing) {
+    function setBearing(nextBearing, originPoint) {
       const normalizedBearing = normalizeBearing(nextBearing);
       rotationState.angle = normalizedBearing;
-      mapPane.style.transformOrigin = '50% 50%';
+      if (originPoint) {
+        mapPane.style.transformOrigin = `${originPoint.x}px ${originPoint.y}px`;
+      } else {
+        mapPane.style.transformOrigin = '50% 50%';
+      }
       mapPane.style.transform = `rotate(${normalizedBearing}deg)`;
       map.fire('rotate');
     }
@@ -302,6 +309,14 @@
       return toDegrees(Math.atan2(touchB.clientY - touchA.clientY, touchB.clientX - touchA.clientX));
     }
 
+    function calculateTouchMidpoint(touchA, touchB) {
+      const rect = mapContainer.getBoundingClientRect();
+      return {
+        x: (touchA.clientX + touchB.clientX) / 2 - rect.left,
+        y: (touchA.clientY + touchB.clientY) / 2 - rect.top
+      };
+    }
+
     function onTouchStart(event) {
       if (!event.touches || event.touches.length !== 2) {
         return;
@@ -309,11 +324,9 @@
 
       const [touchA, touchB] = event.touches;
       rotationState.isRotatingTouch = true;
-      rotationState.gestureStartAngle = calculateTouchAngle(touchA, touchB);
+      rotationState.isRotateEngagedForGesture = false;
+      rotationState.gestureBaselineAngle = calculateTouchAngle(touchA, touchB);
       rotationState.gestureStartBearing = rotationState.angle;
-      if (rotationState.headingFollowEnabled) {
-        rotationState.headingFollowEnabled = false;
-      }
     }
 
     function onTouchMove(event) {
@@ -322,9 +335,26 @@
       }
 
       const [touchA, touchB] = event.touches;
+      const midpoint = calculateTouchMidpoint(touchA, touchB);
       const currentAngle = calculateTouchAngle(touchA, touchB);
-      const rotationDelta = normalizeBearing(currentAngle - rotationState.gestureStartAngle);
-      setBearing(rotationState.gestureStartBearing + rotationDelta);
+      const baselineDelta = normalizeBearing(currentAngle - rotationState.gestureBaselineAngle);
+
+      if (!rotationState.isRotateEngagedForGesture) {
+        if (Math.abs(baselineDelta) < ROTATION_ENGAGE_THRESHOLD_DEGREES) {
+          return;
+        }
+
+        rotationState.isRotateEngagedForGesture = true;
+        rotationState.gestureStartBearing = rotationState.angle;
+        rotationState.gestureBaselineAngle = currentAngle;
+        if (rotationState.headingFollowEnabled) {
+          rotationState.headingFollowEnabled = false;
+        }
+        return;
+      }
+
+      const incrementalDelta = normalizeBearing(currentAngle - rotationState.gestureBaselineAngle);
+      setBearing(rotationState.gestureStartBearing + incrementalDelta, midpoint);
     }
 
     function onTouchEnd(event) {
@@ -332,6 +362,7 @@
         return;
       }
       rotationState.isRotatingTouch = false;
+      rotationState.isRotateEngagedForGesture = false;
     }
 
     map.getContainer().addEventListener('touchstart', onTouchStart, { passive: true });
@@ -370,6 +401,11 @@
     function updateCompassVisibility() {
       const compassControl = document.getElementById('compass-reset-control');
       compassControl.classList.toggle('is-visible', Math.abs(rotationState.angle) > 1);
+
+      const northArrow = document.querySelector('.north-compass-arrow');
+      if (northArrow) {
+        northArrow.style.transform = `rotate(${-rotationState.angle}deg)`;
+      }
     }
 
     map.on('rotate', updateCompassVisibility);

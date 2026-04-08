@@ -20,9 +20,9 @@ The current prototype includes:
 - Distance and bearing labels anchored near the line midpoint with opposite-side normal offsets so they remain separated while panning/zooming.
 - Metric scale at the bottom-left.
 
-## PR6 control/interaction updates
+## PR6/PR6.1 control/interaction updates
 
-PR6 replaces default Leaflet top-right controls with a Google Maps iOS-inspired control pattern:
+PR6 replaced default Leaflet top-right controls with a Google Maps iOS-inspired control pattern, and PR6.1 refined gesture behavior:
 
 - A single `Layers` floating button opens a compact layer dialog containing the same three map layer choices.
 - A location button cycles practical modes:
@@ -30,6 +30,7 @@ PR6 replaces default Leaflet top-right controls with a Google Maps iOS-inspired 
   - centered on current location
   - heading-follow (compass-follow style)
 - A north/compass reset button appears only when the map is rotated away from north-up and quickly resets north-up orientation.
-- Two-finger touch rotation is handled explicitly to allow smoother, more predictable map rotation while preserving one-finger pan and pinch zoom.
+- Two-finger touch rotation uses midpoint-pivot anchoring and a 20-degree engage threshold so normal pinch/pan remains dominant unless deliberate twist is detected.
+- A small always-visible round compass indicator displays a red north arrow that rotates opposite the map bearing.
 
 No telemetry ingestion, websocket transport, export/history, or settings subsystems were added.
