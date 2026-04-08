@@ -11,6 +11,9 @@
 
   function setStatusMessage(message) {
     const statusEl = document.getElementById('status-message');
+    if (!statusEl) {
+      return;
+    }
     statusEl.textContent = message || '';
   }
 
@@ -158,6 +161,30 @@
     };
   }
 
+  function calculateLineAngleDegrees(map, startLat, startLng, endLat, endLng) {
+    const startPoint = map.project([startLat, startLng]);
+    const endPoint = map.project([endLat, endLng]);
+    return toDegrees(Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x));
+  }
+
+  function applyLabelAngle(labelMarker, angleDegrees) {
+    if (!labelMarker) {
+      return;
+    }
+
+    const element = labelMarker.getElement();
+    if (!element) {
+      return;
+    }
+
+    const textEl = element.querySelector('.overlay-label-text');
+    if (!textEl) {
+      return;
+    }
+
+    textEl.style.transform = `rotate(${angleDegrees}deg)`;
+  }
+
   function positionOverlayLabels(map, overlayState) {
     if (!overlayState.devicePosition || !overlayState.distanceLabel || !overlayState.bearingLabel) {
       return;
@@ -165,17 +192,28 @@
 
     const aircraftLat = MOCK_DRONE_POSITION.latitude;
     const aircraftLng = MOCK_DRONE_POSITION.longitude;
+    const startLat = overlayState.devicePosition.latitude;
+    const startLng = overlayState.devicePosition.longitude;
     const labelPositions = calculateLabelPosition(
       map,
-      overlayState.devicePosition.latitude,
-      overlayState.devicePosition.longitude,
+      startLat,
+      startLng,
       aircraftLat,
       aircraftLng,
-      16
+      3
+    );
+    const lineAngleDegrees = calculateLineAngleDegrees(
+      map,
+      startLat,
+      startLng,
+      aircraftLat,
+      aircraftLng
     );
 
     overlayState.distanceLabel.setLatLng(labelPositions.above);
     overlayState.bearingLabel.setLatLng(labelPositions.below);
+    applyLabelAngle(overlayState.distanceLabel, lineAngleDegrees);
+    applyLabelAngle(overlayState.bearingLabel, lineAngleDegrees);
   }
 
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
