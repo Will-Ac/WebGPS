@@ -32,6 +32,16 @@ PR3 keeps the PR2 map foundation intact and adds only lightweight visual/control
   - bearing in degrees (normalized to 0-359)
 - A Leaflet metric scale control is added at the bottom-left.
 
-No websocket/telemetry ingestion, route history, auto-follow, animation, or heading-arrow systems were introduced or modified in PR3.
+## Touch and map-control refinements (PR6.1)
+
+PR6.1 keeps the existing map and overlays, then tightens control behaviour on touch devices:
+
+- Replaces always-open layer options with a `Layers` button that opens a temporary picker panel.
+- Keeps the same 3 map type options (Streets, Satellite, Terrain).
+- Automatically closes the picker after selection and supports outside-tap dismissal.
+- Adds two-finger map rotation around the live midpoint between active touches.
+- Uses gesture disambiguation where pan/zoom is the default and rotation only engages after a `20°` twist threshold.
+- Locks rotate mode for the rest of that gesture once the threshold is crossed, while avoiding a jump at lock-on.
+- Adds an always-visible round compass indicator with a red north arrow in the top-right control stack.
 
 No telemetry ingestion, websocket, aircraft tracking, or export/settings architecture is included in this PR.
