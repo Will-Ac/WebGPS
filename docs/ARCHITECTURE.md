@@ -20,4 +20,18 @@ This PR introduces only the base map foundation needed for future telemetry work
 - A second marker representing a mock drone position at `51.4733071, -2.5859117` (displayed as a red circle marker) so it is visually distinct from the current device marker.
 - Updated map/layer zoom configuration so Streets and Satellite both support deeper zoom (up to level 19 in this prototype).
 
+## Map overlay and control refinements (PR3)
+
+PR3 keeps the PR2 map foundation intact and adds only lightweight visual/control refinements:
+
+- Version badge moved to top-center for consistent visibility.
+- Layer chooser remains on the top-right, with zoom controls positioned directly beneath it.
+- A dotted polyline overlay is drawn between current device position and the mock drone marker when device location is available.
+- Two midpoint labels are rendered on that line:
+  - distance in meters
+  - bearing in degrees (normalized to 0-359)
+- A Leaflet metric scale control is added at the bottom-left.
+
+No websocket/telemetry ingestion, route history, auto-follow, animation, or heading-arrow systems were introduced or modified in PR3.
+
 No telemetry ingestion, websocket, aircraft tracking, or export/settings architecture is included in this PR.
