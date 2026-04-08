@@ -14,8 +14,32 @@
   </head>
   <body>
     <main id="app-shell" aria-label="Map screen">
-      <div id="version-badge" aria-label="Version badge">[PR5]</div>
+      <div id="version-badge" aria-label="Version badge">[PR6]</div>
       <div id="map" aria-label="Map view"></div>
+
+      <div id="map-ios-controls" aria-label="Map controls">
+        <button id="layers-button" class="map-ios-fab" type="button" aria-expanded="false" aria-controls="layers-dialog" aria-label="Map layers">
+          <span class="map-ios-fab-icon">◫</span>
+          <span class="map-ios-fab-text">Layers</span>
+        </button>
+
+        <button id="compass-reset-control" class="map-ios-fab" type="button" aria-label="Reset north-up">
+          <span class="map-ios-fab-icon">N</span>
+          <span class="map-ios-fab-text">North</span>
+        </button>
+
+        <button id="location-mode-button" class="map-ios-fab" type="button" aria-label="Location mode" data-mode="inactive">
+          <span class="location-mode-icon" aria-hidden="true">⌖</span>
+          <span class="location-mode-label">Locate</span>
+        </button>
+      </div>
+
+      <section id="layers-dialog" aria-label="Map layer options" hidden>
+        <h2>Map type</h2>
+        <button class="layer-option" type="button" data-layer-key="streets">Streets</button>
+        <button class="layer-option" type="button" data-layer-key="satellite">Satellite</button>
+        <button class="layer-option" type="button" data-layer-key="terrain">Terrain</button>
+      </section>
     </main>
 
     <script

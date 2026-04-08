@@ -4,34 +4,32 @@
 
 The app currently uses a simple static client architecture:
 
-- `index.html` provides a minimal app shell with a map container, version badge, and status message area.
-- `app.js` initializes a Leaflet map and contains a small initialization abstraction for map setup and first-load geolocation handling.
-- `styles.css` defines a mobile-friendly full-screen map layout.
+- `index.html` provides a minimal app shell with a full-screen map, version badge, Google Maps-style control cluster, and a lightweight layer-selection dialog.
+- `app.js` initializes the Leaflet map, location/heading interaction state, map rotation handling, and the distance/bearing overlay updates.
+- `styles.css` defines a mobile-first full-screen map layout plus the custom control and label styling.
 
-## Map foundation (PR1 + PR2)
+## Map foundation and overlays (PR1-PR6)
 
-This PR introduces only the base map foundation needed for future telemetry work:
+The current prototype includes:
 
-- A full-screen map view suitable for mobile and desktop.
-- Browser geolocation request on first load.
-- A marker for the current device position when geolocation succeeds.
-- A non-blocking fallback status message and default map view when geolocation is unavailable.
-- User-selectable base map layers (street, satellite, terrain).
-- A second marker representing a mock drone position at `51.4733071, -2.5859117` (displayed as a red circle marker) so it is visually distinct from the current device marker.
-- Updated map/layer zoom configuration so Streets and Satellite both support deeper zoom (up to level 19 in this prototype).
+- Full-screen interactive map with mobile-friendly controls.
+- Browser geolocation handling with sensible fallback view when unavailable.
+- Current device marker and mock drone marker (`51.4733071, -2.5859117`).
+- Base map layer switching for Streets, Satellite, and Terrain.
+- Dotted line overlay between device and mock drone positions.
+- Distance and bearing labels anchored near the line midpoint with opposite-side normal offsets so they remain separated while panning/zooming.
+- Metric scale at the bottom-left.
 
-## Map overlay and control refinements (PR3)
+## PR6 control/interaction updates
 
-PR3 keeps the PR2 map foundation intact and adds only lightweight visual/control refinements:
+PR6 replaces default Leaflet top-right controls with a Google Maps iOS-inspired control pattern:
 
-- Version badge moved to top-center for consistent visibility.
-- Layer chooser remains on the top-right, with zoom controls positioned directly beneath it.
-- A dotted polyline overlay is drawn between current device position and the mock drone marker when device location is available.
-- Two midpoint labels are rendered on that line:
-  - distance in meters
-  - bearing in degrees (normalized to 0-359)
-- A Leaflet metric scale control is added at the bottom-left.
+- A single `Layers` floating button opens a compact layer dialog containing the same three map layer choices.
+- A location button cycles practical modes:
+  - inactive
+  - centered on current location
+  - heading-follow (compass-follow style)
+- A north/compass reset button appears only when the map is rotated away from north-up and quickly resets north-up orientation.
+- Two-finger touch rotation is handled explicitly to allow smoother, more predictable map rotation while preserving one-finger pan and pinch zoom.
 
-No websocket/telemetry ingestion, route history, auto-follow, animation, or heading-arrow systems were introduced or modified in PR3.
-
-No telemetry ingestion, websocket, aircraft tracking, or export/settings architecture is included in this PR.
+No telemetry ingestion, websocket transport, export/history, or settings subsystems were added.
