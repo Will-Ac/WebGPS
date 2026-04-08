@@ -119,17 +119,63 @@
     };
   }
 
-  function createOverlayLabel(lat, lng, className, text, offset) {
+  function createOverlayLabel(lat, lng, className, text) {
     return L.marker([lat, lng], {
       interactive: false,
       icon: L.divIcon({
         className,
-        html: text,
+        html: `<span class="overlay-label-text">${text}</span>`,
+        iconSize: null,
         iconAnchor: [0, 0]
       }),
       zIndexOffset: 800,
       keyboard: false
-    }).setLatLng([lat + offset, lng]);
+    });
+  }
+
+  function calculateLabelPosition(map, startLat, startLng, endLat, endLng, distancePixels) {
+    const startPoint = map.project([startLat, startLng]);
+    const endPoint = map.project([endLat, endLng]);
+    const midPoint = L.point(
+      (startPoint.x + endPoint.x) / 2,
+      (startPoint.y + endPoint.y) / 2
+    );
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const normalX = -dy / length;
+    const normalY = dx / length;
+    const aboveX = normalY < 0 ? normalX : -normalX;
+    const aboveY = normalY < 0 ? normalY : -normalY;
+
+    return {
+      above: map.unproject(
+        L.point(midPoint.x + aboveX * distancePixels, midPoint.y + aboveY * distancePixels)
+      ),
+      below: map.unproject(
+        L.point(midPoint.x - aboveX * distancePixels, midPoint.y - aboveY * distancePixels)
+      )
+    };
+  }
+
+  function positionOverlayLabels(map, overlayState) {
+    if (!overlayState.devicePosition || !overlayState.distanceLabel || !overlayState.bearingLabel) {
+      return;
+    }
+
+    const aircraftLat = MOCK_DRONE_POSITION.latitude;
+    const aircraftLng = MOCK_DRONE_POSITION.longitude;
+    const labelPositions = calculateLabelPosition(
+      map,
+      overlayState.devicePosition.latitude,
+      overlayState.devicePosition.longitude,
+      aircraftLat,
+      aircraftLng,
+      16
+    );
+
+    overlayState.distanceLabel.setLatLng(labelPositions.above);
+    overlayState.bearingLabel.setLatLng(labelPositions.below);
   }
 
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
@@ -142,41 +188,51 @@
       }).addTo(map);
     }
 
-    if (overlayState.distanceLabel) {
-      map.removeLayer(overlayState.distanceLabel);
-    }
-
-    if (overlayState.bearingLabel) {
-      map.removeLayer(overlayState.bearingLabel);
-    }
-
     const aircraftLat = MOCK_DRONE_POSITION.latitude;
     const aircraftLng = MOCK_DRONE_POSITION.longitude;
+    overlayState.devicePosition = {
+      latitude: deviceLat,
+      longitude: deviceLng
+    };
     const linePoints = [
       [deviceLat, deviceLng],
       [aircraftLat, aircraftLng]
     ];
     overlayState.line.setLatLngs(linePoints);
 
-    const midpoint = calculateMidpoint(deviceLat, deviceLng, aircraftLat, aircraftLng);
     const distanceMeters = calculateDistanceMeters(deviceLat, deviceLng, aircraftLat, aircraftLng);
     const bearingDegrees = calculateBearingDegrees(deviceLat, deviceLng, aircraftLat, aircraftLng);
 
-    overlayState.distanceLabel = createOverlayLabel(
-      midpoint.latitude,
-      midpoint.longitude,
-      'leaflet-control-distance-label',
-      `${Math.round(distanceMeters)} m`,
-      0.0011
-    ).addTo(map);
+    if (!overlayState.distanceLabel) {
+      overlayState.distanceLabel = createOverlayLabel(
+        deviceLat,
+        deviceLng,
+        'leaflet-control-distance-label',
+        `${Math.round(distanceMeters)} m`
+      ).addTo(map);
+    } else {
+      overlayState.distanceLabel.getElement().innerHTML = `<span class="overlay-label-text">${Math.round(distanceMeters)} m</span>`;
+    }
 
-    overlayState.bearingLabel = createOverlayLabel(
-      midpoint.latitude,
-      midpoint.longitude,
-      'leaflet-control-bearing-label',
-      `${Math.round(bearingDegrees)}°`,
-      -0.0011
-    ).addTo(map);
+    if (!overlayState.bearingLabel) {
+      overlayState.bearingLabel = createOverlayLabel(
+        deviceLat,
+        deviceLng,
+        'leaflet-control-bearing-label',
+        `${Math.round(bearingDegrees)}°`
+      ).addTo(map);
+    } else {
+      overlayState.bearingLabel.getElement().innerHTML = `<span class="overlay-label-text">${Math.round(bearingDegrees)}°</span>`;
+    }
+
+    positionOverlayLabels(map, overlayState);
+
+    if (!overlayState.isLabelPositionBound) {
+      map.on('zoom move', () => {
+        positionOverlayLabels(map, overlayState);
+      });
+      overlayState.isLabelPositionBound = true;
+    }
   }
 
   function requestCurrentLocation(map, overlayState) {
@@ -213,7 +269,9 @@
   const overlayState = {
     line: null,
     distanceLabel: null,
-    bearingLabel: null
+    bearingLabel: null,
+    devicePosition: null,
+    isLabelPositionBound: false
   };
   placeMockDroneMarker(map);
   requestCurrentLocation(map, overlayState);

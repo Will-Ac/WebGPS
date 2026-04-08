@@ -42,15 +42,23 @@ body {
 
 .leaflet-control-distance-label,
 .leaflet-control-bearing-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.72);
   border: 0;
   border-radius: 0.35rem;
   color: #fff;
-  font-size: 0.78rem;
+  font-size: 1.55rem;
   font-weight: 600;
-  line-height: 1.2;
-  padding: 0.2rem 0.45rem;
+  line-height: 1;
+  padding: 0.34rem 0.65rem;
   white-space: nowrap;
+}
+
+.overlay-label-text {
+  display: block;
 }
 
 .status-message {
