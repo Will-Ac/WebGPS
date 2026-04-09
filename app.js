@@ -261,6 +261,11 @@
         });
 
         map.on('click', closeChooser);
+        document.addEventListener('pointerdown', (event) => {
+          if (!container.contains(event.target)) {
+            closeChooser();
+          }
+        });
         return container;
       }
     });
@@ -290,8 +295,15 @@
       return;
     }
 
+    const transformWithoutRotation = (pane.style.transform || '')
+      .replace(/ ?rotate\([^)]*\)/g, '')
+      .trim();
+
     pane.style.transformOrigin = '50% 50%';
-    pane.style.transform = `rotate(${rotationDegrees}deg)`;
+    pane.style.transform =
+      rotationDegrees === 0
+        ? transformWithoutRotation
+        : `${transformWithoutRotation} rotate(${rotationDegrees}deg)`;
   }
 
   function updateNorthIndicatorRotation(compassState, headingDegrees) {
@@ -356,6 +368,13 @@
   }
 
   function bindHeadingTracking(map, compassState) {
+    const reapplyCompassRotation = () => {
+      if (!compassState.isCompassFollowEnabled) {
+        return;
+      }
+      applyMapRotation(map, -compassState.headingDegrees);
+    };
+
     const handleDeviceOrientation = (event) => {
       if (event && typeof event.webkitCompassHeading === 'number') {
         compassState.headingDegrees = normalizeBearing(event.webkitCompassHeading);
@@ -373,6 +392,7 @@
 
     window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
     window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+    map.on('move zoom zoomanim viewreset resize', reapplyCompassRotation);
     map.on('dragstart zoomstart', () => {
       compassState.isRecenteringPrimed = false;
     });

@@ -45,6 +45,14 @@ PR6 keeps the existing map, layer sources, markers, and overlay calculations, bu
 - A small round north indicator is rendered under the location control and rotates to continue indicating north while heading changes.
 - Distance and bearing labels use a larger, opposite-side line offset so both remain tied to the dotted line without overlapping.
 
+## PR6.1 control fidelity and compass rotation fixes
+
+PR6.1 keeps PR6 structure but corrects three issues:
+
+- Right-side control icons were refined to better match the uploaded iOS reference photos for Layers, Location, and compass/north indicator.
+- The layers picker is now guaranteed hidden by default and rendered only after tapping the Layers button.
+- Compass-follow map rotation now re-applies heading rotation across map movement/zoom updates so heading-follow remains active instead of being lost when Leaflet updates pane transforms.
+
 No websocket/telemetry ingestion, route history, auto-follow, animation, or heading-arrow systems were introduced or modified in PR3.
 
 No telemetry ingestion, websocket, aircraft tracking, or export/settings architecture is included in this PR.
