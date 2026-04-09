@@ -3,6 +3,7 @@
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
   const MAX_MAP_ZOOM = 19;
+  const LABEL_OFFSET_PIXELS = 16;
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
     longitude: -2.5859117
@@ -43,22 +44,17 @@
 
     streetLayer.addTo(map);
 
-    L.control
-      .layers(
-        {
-          Streets: streetLayer,
-          Satellite: satelliteLayer,
-          Terrain: terrainLayer
-        },
-        null,
-        { collapsed: false }
-      )
-      .addTo(map);
-
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.scale({ position: 'bottomleft', metric: true, imperial: false }).addTo(map);
 
-    return map;
+    return {
+      map,
+      baseLayers: {
+        Streets: streetLayer,
+        Satellite: satelliteLayer,
+        Terrain: terrainLayer
+      }
+    };
   }
 
   function placeCurrentLocationMarker(map, lat, lng) {
@@ -200,7 +196,7 @@
       startLng,
       aircraftLat,
       aircraftLng,
-      3
+      LABEL_OFFSET_PIXELS
     );
     const lineAngleDegrees = calculateLineAngleDegrees(
       map,
@@ -214,6 +210,172 @@
     overlayState.bearingLabel.setLatLng(labelPositions.below);
     applyLabelAngle(overlayState.distanceLabel, lineAngleDegrees);
     applyLabelAngle(overlayState.bearingLabel, lineAngleDegrees);
+  }
+
+  function createLayersButtonControl(map, baseLayers) {
+    const LayersControl = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd() {
+        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-control-stack');
+        const button = L.DomUtil.create('button', 'gm-ios-control-button', container);
+        button.type = 'button';
+        button.setAttribute('aria-label', 'Map layers');
+        button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-layers" aria-hidden="true"></span>';
+
+        const chooser = L.DomUtil.create('div', 'gm-ios-layers-chooser', container);
+        chooser.hidden = true;
+
+        const closeChooser = () => {
+          chooser.hidden = true;
+        };
+
+        const openChooser = () => {
+          chooser.hidden = false;
+        };
+
+        Object.entries(baseLayers).forEach(([label, layer]) => {
+          const optionButton = L.DomUtil.create('button', 'gm-ios-layers-option', chooser);
+          optionButton.type = 'button';
+          optionButton.textContent = label;
+          optionButton.setAttribute('aria-label', `Set map type to ${label}`);
+          L.DomEvent.on(optionButton, 'click', (event) => {
+            L.DomEvent.stop(event);
+            Object.values(baseLayers).forEach((candidateLayer) => {
+              if (map.hasLayer(candidateLayer)) {
+                map.removeLayer(candidateLayer);
+              }
+            });
+            layer.addTo(map);
+            closeChooser();
+          });
+        });
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(button, 'click', (event) => {
+          L.DomEvent.stop(event);
+          if (chooser.hidden) {
+            openChooser();
+          } else {
+            closeChooser();
+          }
+        });
+
+        map.on('click', closeChooser);
+        return container;
+      }
+    });
+
+    return new LayersControl().addTo(map);
+  }
+
+  function createNorthIndicatorControl(map, compassState) {
+    const NorthIndicatorControl = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd() {
+        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-north-indicator-wrap');
+        const indicator = L.DomUtil.create('div', 'gm-ios-north-indicator', container);
+        indicator.innerHTML = '<span class="gm-ios-icon gm-ios-icon-north" aria-hidden="true"></span>';
+        indicator.setAttribute('aria-label', 'North indicator');
+        compassState.northIndicator = indicator;
+        return container;
+      }
+    });
+
+    return new NorthIndicatorControl().addTo(map);
+  }
+
+  function applyMapRotation(map, rotationDegrees) {
+    const pane = map.getPane('mapPane');
+    if (!pane) {
+      return;
+    }
+
+    pane.style.transformOrigin = '50% 50%';
+    pane.style.transform = `rotate(${rotationDegrees}deg)`;
+  }
+
+  function updateNorthIndicatorRotation(compassState, headingDegrees) {
+    if (!compassState.northIndicator) {
+      return;
+    }
+
+    compassState.northIndicator.style.transform = `rotate(${-headingDegrees}deg)`;
+  }
+
+  function createLocationControl(map, compassState) {
+    const LocationControl = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd() {
+        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-location-wrap');
+        const button = L.DomUtil.create('button', 'gm-ios-control-button gm-ios-location-button', container);
+        button.type = 'button';
+        button.setAttribute('aria-label', 'Recenter map to your location');
+        button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-location" aria-hidden="true"></span>';
+        compassState.locationButton = button;
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(button, 'click', (event) => {
+          L.DomEvent.stop(event);
+          if (!compassState.devicePosition) {
+            return;
+          }
+
+          if (compassState.isCompassFollowEnabled) {
+            compassState.isCompassFollowEnabled = false;
+            compassState.isRecenteringPrimed = false;
+            button.classList.remove('is-compass-follow');
+            applyMapRotation(map, 0);
+            updateNorthIndicatorRotation(compassState, 0);
+            map.setView(
+              [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
+              map.getZoom()
+            );
+            return;
+          }
+
+          map.setView(
+            [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
+            map.getZoom()
+          );
+
+          if (compassState.isRecenteringPrimed) {
+            compassState.isCompassFollowEnabled = true;
+            button.classList.add('is-compass-follow');
+            if (typeof compassState.headingDegrees === 'number') {
+              applyMapRotation(map, -compassState.headingDegrees);
+              updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+            }
+          }
+
+          compassState.isRecenteringPrimed = !compassState.isRecenteringPrimed;
+        });
+        return container;
+      }
+    });
+
+    return new LocationControl().addTo(map);
+  }
+
+  function bindHeadingTracking(map, compassState) {
+    const handleDeviceOrientation = (event) => {
+      if (event && typeof event.webkitCompassHeading === 'number') {
+        compassState.headingDegrees = normalizeBearing(event.webkitCompassHeading);
+      } else if (event && typeof event.alpha === 'number') {
+        compassState.headingDegrees = normalizeBearing(360 - event.alpha);
+      } else {
+        return;
+      }
+
+      if (compassState.isCompassFollowEnabled) {
+        applyMapRotation(map, -compassState.headingDegrees);
+      }
+      updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+    };
+
+    window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
+    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+    map.on('dragstart zoomstart', () => {
+      compassState.isRecenteringPrimed = false;
+    });
   }
 
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
@@ -273,7 +435,7 @@
     }
   }
 
-  function requestCurrentLocation(map, overlayState) {
+  function requestCurrentLocation(map, overlayState, compassState) {
     if (!navigator.geolocation) {
       setStatusMessage('Location unavailable: this browser does not support geolocation.');
       return;
@@ -286,6 +448,7 @@
         const { latitude, longitude } = position.coords;
         map.setView([latitude, longitude], FOCUS_ZOOM);
         placeCurrentLocationMarker(map, latitude, longitude);
+        compassState.devicePosition = { latitude, longitude };
         updateDeviceToAircraftOverlay(map, latitude, longitude, overlayState);
         setStatusMessage('Showing your current device position.');
       },
@@ -303,7 +466,8 @@
     );
   }
 
-  const map = createMap();
+  const mapSetup = createMap();
+  const map = mapSetup.map;
   const overlayState = {
     line: null,
     distanceLabel: null,
@@ -311,6 +475,18 @@
     devicePosition: null,
     isLabelPositionBound: false
   };
+  const compassState = {
+    headingDegrees: 0,
+    devicePosition: null,
+    isCompassFollowEnabled: false,
+    isRecenteringPrimed: false,
+    locationButton: null,
+    northIndicator: null
+  };
+  createLayersButtonControl(map, mapSetup.baseLayers);
+  createLocationControl(map, compassState);
+  createNorthIndicatorControl(map, compassState);
+  bindHeadingTracking(map, compassState);
   placeMockDroneMarker(map);
-  requestCurrentLocation(map, overlayState);
+  requestCurrentLocation(map, overlayState, compassState);
 })();

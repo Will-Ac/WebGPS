@@ -32,6 +32,19 @@ PR3 keeps the PR2 map foundation intact and adds only lightweight visual/control
   - bearing in degrees (normalized to 0-359)
 - A Leaflet metric scale control is added at the bottom-left.
 
+## Google Maps iOS style control pass (PR6)
+
+PR6 keeps the existing map, layer sources, markers, and overlay calculations, but adjusts the right-side control system to match Google Maps iOS conventions more closely:
+
+- The always-visible Leaflet layer selector is replaced with a single round layers button.
+- Tapping the layers button opens a temporary chooser with only the existing three base layers (Streets, Satellite, Terrain), and the chooser dismisses after selection.
+- A round location button is added below the layers button with a two-step tap flow:
+  - first tap recenters on the device location
+  - second tap enables compass-follow mode
+- In compass-follow mode, device heading events rotate the map so the view aligns with heading; tapping location again exits compass-follow and returns to north-up.
+- A small round north indicator is rendered under the location control and rotates to continue indicating north while heading changes.
+- Distance and bearing labels use a larger, opposite-side line offset so both remain tied to the dotted line without overlapping.
+
 No websocket/telemetry ingestion, route history, auto-follow, animation, or heading-arrow systems were introduced or modified in PR3.
 
 No telemetry ingestion, websocket, aircraft tracking, or export/settings architecture is included in this PR.

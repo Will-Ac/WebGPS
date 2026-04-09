@@ -37,7 +37,7 @@ body {
 }
 
 .leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-top: 0.4rem;
+  margin-top: 15.5rem;
 }
 
 .leaflet-control-distance-label,
@@ -67,4 +67,165 @@ body {
 
 .leaflet-control-scale-line {
   font-size: 1.5em;
+}
+
+.gm-ios-control-stack,
+.gm-ios-location-wrap,
+.gm-ios-north-indicator-wrap {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.gm-ios-control-stack {
+  margin-top: 1rem;
+  margin-right: 0.85rem;
+  position: relative;
+}
+
+.gm-ios-location-wrap {
+  margin-top: 0.5rem;
+  margin-right: 0.85rem;
+}
+
+.gm-ios-north-indicator-wrap {
+  margin-top: 0.45rem;
+  margin-right: 1.15rem;
+}
+
+.gm-ios-control-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+}
+
+.gm-ios-control-button:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.gm-ios-icon {
+  display: inline-block;
+  position: relative;
+}
+
+.gm-ios-icon-layers {
+  width: 1.15rem;
+  height: 0.95rem;
+}
+
+.gm-ios-icon-layers::before,
+.gm-ios-icon-layers::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: 2px solid #2f2f2f;
+  border-radius: 3px;
+  transform: skewX(-18deg);
+}
+
+.gm-ios-icon-layers::before {
+  top: 0.2rem;
+  height: 0.45rem;
+}
+
+.gm-ios-icon-layers::after {
+  top: 0.45rem;
+  height: 0.45rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.gm-ios-icon-location {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid #2f2f2f;
+  border-radius: 999px;
+}
+
+.gm-ios-icon-location::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.35rem;
+  height: 0.35rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #2f2f2f;
+}
+
+.gm-ios-location-button.is-compass-follow .gm-ios-icon-location {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 0;
+  border-radius: 0;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #2b7de9 48%, #c5dbf9 52%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.gm-ios-location-button.is-compass-follow .gm-ios-icon-location::after {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.gm-ios-layers-chooser {
+  position: absolute;
+  right: 3.2rem;
+  top: 0;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  min-width: 7.5rem;
+  overflow: hidden;
+}
+
+.gm-ios-layers-option {
+  border: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: transparent;
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.gm-ios-layers-option:last-child {
+  border-bottom: 0;
+}
+
+.gm-ios-layers-option:hover {
+  background: rgba(26, 115, 232, 0.08);
+}
+
+.gm-ios-north-indicator {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  transform-origin: center center;
+}
+
+.gm-ios-icon-north {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-left: 0.35rem solid transparent;
+  border-right: 0.35rem solid transparent;
+  border-bottom: 0.62rem solid #d93025;
+  transform: translateY(-0.15rem);
 }
