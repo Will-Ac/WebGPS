@@ -55,3 +55,15 @@ Then open `http://localhost:8000`.
 13. Confirm scale remains visible at bottom-left.
 14. Confirm browser console has no runtime errors during these flows.
 
+## PR8.2 validation checklist
+
+1. Enter compass-follow and rotate device about 90°; verify map rotates about 90° (not ~180°).
+2. Rotate device through a full 360°; verify map completes one 360° rotation cycle (not ~720°).
+3. Repeat compass-follow enter/exit several times; verify rotation stays 1:1 and does not worsen.
+4. Confirm only one active heading subscription is reported in compass debug logs.
+5. Confirm debug logs show one heading-to-bearing conversion path (`apply heading -> bearing`) with absolute bearing values.
+6. Confirm first-tap recenter, second-tap compass-follow behaviour remains intact.
+7. Confirm lower-third compass placement remains intact during heading and location updates.
+8. Confirm layers picker, markers, dotted line, and distance/bearing labels continue working.
+9. Confirm no console runtime errors.
+

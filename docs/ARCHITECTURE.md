@@ -92,3 +92,13 @@ PR8 replaces Leaflet in the main runtime path with MapLibre GL JS so compass-fol
 - Device marker, mock aircraft marker, dotted connection line, and distance/bearing labels remain, with line rendering moved to a MapLibre GeoJSON line layer and labels kept as synchronized HTML overlays.
 - Scale display remains available at bottom-left using MapLibre’s scale control.
 
+## PR8.2 compass-follow double-rotation fix
+
+PR8.2 keeps the PR8 MapLibre migration intact and fixes compass-follow over-rotation by enforcing a single heading-to-bearing pipeline:
+
+- Root cause: heading-to-bearing camera updates were triggered from multiple camera update paths, so heading influence could be re-applied while recenter/position updates were also driving compass camera changes.
+- Fix: heading conversion and bearing application now happen in exactly one dedicated path (`applyCompassBearingFromHeading`).
+- Map bearing is now set as an absolute value derived once from normalized heading (`bearing = -heading` in map convention), not as repeated implicit reapplication.
+- Camera recenter updates while in compass mode now preserve the current map bearing instead of recomputing/reapplying heading transforms.
+- Added concise compass debug logs for heading input, final map bearing output, subscription count, and compass mode transitions.
+
