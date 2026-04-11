@@ -271,12 +271,26 @@
     return -normalizeBearing(headingDegrees);
   }
 
+  function toSigned180(degrees) {
+    return ((degrees + 180) % 360 + 360) % 360 - 180;
+  }
+
+  function resolveNearestBearing(currentBearing, targetBearing) {
+    const delta = toSigned180(targetBearing - currentBearing);
+    return currentBearing + delta;
+  }
+
   function applyCompassBearingFromHeading(map, compassState, headingDegrees) {
     if (!compassState.isCompassFollowEnabled) {
       return;
     }
 
-    const finalBearing = headingToMapBearing(headingDegrees);
+    const targetBearing = headingToMapBearing(headingDegrees);
+    const currentBearing =
+      typeof compassState.lastAppliedMapBearing === 'number'
+        ? compassState.lastAppliedMapBearing
+        : map.getBearing();
+    const finalBearing = resolveNearestBearing(currentBearing, targetBearing);
     if (compassState.lastAppliedMapBearing === finalBearing) {
       return;
     }
@@ -285,6 +299,7 @@
     debugCompassLog('apply heading -> bearing', {
       sourceHeading: headingDegrees,
       normalizedHeading: headingDegrees,
+      targetBearing,
       finalMapBearing: finalBearing,
       activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
     });

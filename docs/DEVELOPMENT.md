@@ -67,3 +67,13 @@ Then open `http://localhost:8000`.
 8. Confirm layers picker, markers, dotted line, and distance/bearing labels continue working.
 9. Confirm no console runtime errors.
 
+## PR8.3 validation checklist
+
+1. In compass-follow, rotate heading across north (for example 350° -> 10°) and confirm no extra near-360° jump occurs.
+2. Rotate device about 90° and confirm map rotates about 90°.
+3. Rotate device through a full 360° and confirm map completes one 360° cycle.
+4. Toggle compass-follow on/off repeatedly and confirm no duplicated heading behaviour appears.
+5. Confirm heading logs show browser event source -> extracted heading -> normalized heading -> final target/final applied bearing.
+6. Confirm no secondary heading source takes over once a higher-priority source is selected unless required.
+7. Confirm lower-third placement, layers picker, markers, overlays, and north indicator still behave as before.
+

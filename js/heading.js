@@ -109,9 +109,17 @@
 
       const incomingPriority = sourcePriority[sourceName] || 0;
       const currentPriority = sourcePriority[selectedSource] || 0;
-      const shouldUseIncomingSource = !selectedSource || incomingPriority >= currentPriority;
+      const shouldUseIncomingSource =
+        !selectedSource ||
+        sourceName === selectedSource ||
+        incomingPriority > currentPriority;
 
       if (!shouldUseIncomingSource) {
+        debugLog('ignored heading update from lower/equal-priority alternate source', {
+          source: sourceName,
+          selectedSource,
+          headingDegrees: normalizedHeading
+        });
         return;
       }
 
@@ -172,6 +180,14 @@
       if (!candidate) {
         return;
       }
+      debugLog('raw orientation candidate', {
+        eventType: event.type,
+        source: candidate.source,
+        rawWebkitHeading:
+          typeof event.webkitCompassHeading === 'number' ? event.webkitCompassHeading : null,
+        rawAlpha: typeof event.alpha === 'number' ? event.alpha : null,
+        extractedHeading: candidate.headingDegrees
+      });
       setHeadingUpdate(candidate.headingDegrees, candidate.source, candidate.degraded);
     }
 

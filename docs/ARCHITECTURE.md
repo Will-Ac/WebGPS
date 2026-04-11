@@ -102,3 +102,13 @@ PR8.2 keeps the PR8 MapLibre migration intact and fixes compass-follow over-rota
 - Camera recenter updates while in compass mode now preserve the current map bearing instead of recomputing/reapplying heading transforms.
 - Added concise compass debug logs for heading input, final map bearing output, subscription count, and compass mode transitions.
 
+## PR8.3 compass-follow 1:1 rotation fix
+
+PR8.3 keeps PR8/PR8.2 structure but fixes the remaining over-rotation when heading wraps through north:
+
+- Exact heading path is now documented as: browser orientation event -> `extractHeadingCandidate` in `js/heading.js` -> normalized heading subscriber payload -> `applyCompassBearingFromHeading` in `app.js` -> MapLibre camera bearing update.
+- Root cause: heading values were normalized in `[0, 360)` and then converted to bearing directly, which caused a discontinuity near north crossing (for example `359 -> 0`) so camera bearing could take an extra near-full-turn jump.
+- Fix: `app.js` now resolves each new target bearing to the nearest equivalent around the current bearing before applying it, preventing wraparound over-rotation while keeping absolute heading-follow.
+- `js/heading.js` now ignores lower/equal-priority alternate sources once a source is selected, preventing parallel event streams from fighting each other.
+- Additional concise debug logs now show raw event type/source values, extracted heading, normalized heading updates, final target bearing, and final bearing sent to MapLibre.
+
