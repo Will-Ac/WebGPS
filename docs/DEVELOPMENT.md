@@ -37,3 +37,21 @@ Then open `http://localhost:8000`.
 23. Confirm a metric map scale appears at the bottom-left.
 24. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
 25. Confirm browser console has no runtime errors during these flows.
+
+## PR8 validation checklist
+
+1. Load the app and confirm MapLibre renders in the existing `#map` container.
+2. Confirm there is no active DOM pane rotation path (`transform: rotate(...)` on Leaflet map panes is no longer used).
+3. Accept location permission and confirm current location marker appears and map focuses the device.
+4. Confirm mock aircraft marker appears at `51.4733071, -2.5859117`.
+5. Confirm dotted line between device and aircraft renders and updates while moving/panning/zooming/rotating.
+6. Confirm distance and bearing labels stay on opposite sides of the line with semi-transparent white pill backgrounds.
+7. Confirm layers button opens temporary chooser with Streets/Satellite/Terrain and chooser dismisses after selection.
+8. Confirm first location-button tap recenters device without entering compass-follow.
+9. Confirm second location-button tap attempts compass-follow using PR7 heading module and rotates map via native bearing updates.
+10. If heading permission is denied/unavailable/no data, confirm compass-follow exits gracefully and does not stay visually active.
+11. In compass-follow mode, confirm device stays lower-center (about one-third up from bottom) while heading/location updates continue.
+12. Confirm touch pan/zoom/rotate interaction remains smooth on iPhone/iPad Safari.
+13. Confirm scale remains visible at bottom-left.
+14. Confirm browser console has no runtime errors during these flows.
+

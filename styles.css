@@ -36,37 +36,49 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-.leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-top: 15.5rem;
+.map-overlay-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 700;
 }
 
-.leaflet-control-distance-label,
-.leaflet-control-bearing-label {
+.map-overlay-label {
+  position: absolute;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  background: transparent;
   border: 0;
   color: #1d4ed8;
   font-size: 0.775rem;
   font-weight: 600;
   line-height: 1;
-  padding: 0;
   white-space: nowrap;
-}
-
-.overlay-label-text {
-  display: block;
   transform-origin: center center;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 0.22rem 0.45rem;
 }
 
-.leaflet-bottom.leaflet-left .leaflet-control-scale {
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin-left: 10px;
   margin-bottom: 60px;
 }
 
-.leaflet-control-scale-line {
+.maplibregl-ctrl-scale {
   font-size: 1.5em;
+}
+
+.gm-map-controls {
+  position: absolute;
+  top: 1rem;
+  right: 0.85rem;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
 }
 
 .gm-ios-control-stack,
@@ -75,22 +87,20 @@ body {
   border: 0;
   box-shadow: none;
   background: transparent;
+  pointer-events: auto;
 }
 
 .gm-ios-control-stack {
-  margin-top: 1rem;
-  margin-right: 0.85rem;
   position: relative;
 }
 
 .gm-ios-location-wrap {
   margin-top: 0.5rem;
-  margin-right: 0.85rem;
 }
 
 .gm-ios-north-indicator-wrap {
   margin-top: 0.45rem;
-  margin-right: 1.15rem;
+  margin-right: 0.3rem;
 }
 
 .gm-ios-control-button {
@@ -249,4 +259,23 @@ body {
   transform: translate(-50%, -50%) rotate(45deg);
   background: #fff;
   border-radius: 0.05rem;
+}
+
+.gm-marker {
+  width: 16px;
+  height: 16px;
+}
+
+.gm-marker-device {
+  background: #1a73e8;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.gm-marker-aircraft {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e53935;
+  border: 2px solid #c62828;
 }

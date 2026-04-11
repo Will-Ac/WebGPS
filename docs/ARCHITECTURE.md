@@ -79,3 +79,16 @@ PR7.1 keeps the PR7 heading module intact and updates map behaviour for navigati
 - Previous compass mode centered the user in the middle of the screen; PR7.1 now anchors compass-follow to a lower-third focus point (horizontally centered, about one-third up from bottom) so more map area is visible ahead.
 - Current location handling now maintains a single persistent marker and updates it from geolocation watch updates rather than adding duplicate markers.
 - Tile layers now use increased surrounding tile retention (`keepBuffer`) consistently across Streets/Satellite/Terrain to reduce grey gaps during rotation and improve nearby panning responsiveness.
+
+## PR8 map engine migration to MapLibre GL JS
+
+PR8 replaces Leaflet in the main runtime path with MapLibre GL JS so compass-follow uses native map bearing instead of rotating Leaflet DOM panes:
+
+- Previous Leaflet compass-follow rotated `mapPane` with CSS transforms; PR8 removes that active path and applies heading with MapLibre camera bearing.
+- The PR7 heading module remains the source of normalized heading data and now drives `map.setBearing`/camera bearing updates.
+- The two-step location button flow is preserved (first tap recenter, second tap compass-follow), including graceful failure when heading is unavailable.
+- Lower-third navigation framing is preserved in compass-follow by using native camera offset rather than CSS transform-origin hacks.
+- Layer switching keeps the existing three user-facing choices (Streets, Satellite, Terrain) and now swaps MapLibre styles via the existing custom layers picker UI.
+- Device marker, mock aircraft marker, dotted connection line, and distance/bearing labels remain, with line rendering moved to a MapLibre GeoJSON line layer and labels kept as synchronized HTML overlays.
+- Scale display remains available at bottom-left using MapLibre’s scale control.
+
