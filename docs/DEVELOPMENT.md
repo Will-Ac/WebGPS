@@ -10,7 +10,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-## PR6.1 validation checklist
+## PR7.1 validation checklist
 
 1. Load the app in a desktop browser and confirm the map renders.
 2. Load on iPhone/iPad Safari and confirm the map renders and remains usable in portrait mode.
@@ -23,9 +23,17 @@ Then open `http://localhost:8000`.
 9. Confirm a second marker (`Mock drone position`) is present at `51.4733071, -2.5859117` and is visually distinct from the current device marker.
 10. With location available, confirm a dotted line appears between current device position and mock drone marker.
 11. Confirm distance and bearing labels stay on opposite sides of the dotted line and do not overlap while panning/zooming.
-12. Confirm the round location button recenters on first tap and enters compass-follow mode on second tap.
-13. Confirm in compass-follow mode the map rotates with device heading and continues rotating after map pan/zoom events.
-14. Confirm the small north indicator remains visible and logically indicates north as heading changes.
-15. Confirm a metric map scale appears at the bottom-left.
-16. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
-17. Confirm browser console has no runtime errors during these flows.
+12. Confirm the round location button recenters on first tap and attempts compass-follow on second tap.
+13. On iOS Safari, confirm heading permission is requested only from the location-button tap flow and that `webkitCompassHeading` updates rotate the map when granted.
+14. On Android Chrome (or similar), confirm heading uses absolute orientation when available and falls back to relative alpha only when needed.
+15. Confirm degraded heading fallback reports clearly (status/debug text indicates degraded mode) rather than silently acting as fully trusted heading.
+16. Confirm if heading is denied/unsupported/no data, compass-follow does not stay visually active and a clear status message is shown.
+17. Confirm repeatedly toggling compass-follow on/off does not create duplicate heading listeners or unstable rotation.
+18. Confirm compass-follow rotation pivots around the on-screen current-location marker (not around map center/top-left tile origin).
+19. Confirm entering compass-follow places current location lower-center (about one-third up from bottom) and keeps that placement while heading/location updates continue.
+20. Confirm grey empty areas during rotation are materially reduced due to larger surrounding tile retention.
+21. Confirm nearby panning benefits from tile buffering without obvious performance regressions.
+22. Confirm the small north indicator remains visible and logically indicates north as heading changes.
+23. Confirm a metric map scale appears at the bottom-left.
+24. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
+25. Confirm browser console has no runtime errors during these flows.

@@ -3,6 +3,8 @@
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
   const MAX_MAP_ZOOM = 19;
+  const TILE_KEEP_BUFFER = 8;
+  const COMPASS_ANCHOR_HEIGHT_RATIO = 2 / 3;
   const LABEL_OFFSET_PIXELS = 16;
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
@@ -24,22 +26,30 @@
       maxZoom: MAX_MAP_ZOOM
     }).setView(FALLBACK_CENTER, FALLBACK_ZOOM);
 
+    const tileLayerOptions = {
+      keepBuffer: TILE_KEEP_BUFFER,
+      updateWhenZooming: true
+    };
+
     const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: MAX_MAP_ZOOM,
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      ...tileLayerOptions
     });
 
     const satelliteLayer = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       {
         maxZoom: MAX_MAP_ZOOM,
-        attribution: 'Tiles &copy; Esri'
+        attribution: 'Tiles &copy; Esri',
+        ...tileLayerOptions
       }
     );
 
     const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       maxZoom: 17,
-      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap'
+      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
+      ...tileLayerOptions
     });
 
     streetLayer.addTo(map);
@@ -57,10 +67,15 @@
     };
   }
 
-  function placeCurrentLocationMarker(map, lat, lng) {
-    const marker = L.marker([lat, lng]).addTo(map);
-    marker.bindPopup('Current device position').openPopup();
-    return marker;
+  function upsertCurrentLocationMarker(map, compassState, lat, lng) {
+    if (!compassState.currentLocationMarker) {
+      const marker = L.marker([lat, lng]).addTo(map);
+      marker.bindPopup('Current device position').openPopup();
+      compassState.currentLocationMarker = marker;
+      return;
+    }
+
+    compassState.currentLocationMarker.setLatLng([lat, lng]);
   }
 
   function placeMockDroneMarker(map) {
@@ -289,7 +304,30 @@
     return new NorthIndicatorControl().addTo(map);
   }
 
-  function applyMapRotation(map, rotationDegrees) {
+  function getCompassAnchorPoint(map) {
+    const mapSize = map.getSize();
+    return L.point(mapSize.x / 2, mapSize.y * COMPASS_ANCHOR_HEIGHT_RATIO);
+  }
+
+  function focusDeviceInCompassView(map, compassState) {
+    if (!compassState.devicePosition || compassState.isApplyingCompassView) {
+      return;
+    }
+
+    compassState.isApplyingCompassView = true;
+    try {
+      const deviceLatLng = [compassState.devicePosition.latitude, compassState.devicePosition.longitude];
+      map.setView(deviceLatLng, map.getZoom(), { animate: false });
+      const currentPoint = map.latLngToContainerPoint(deviceLatLng);
+      const targetPoint = getCompassAnchorPoint(map);
+      const panOffset = currentPoint.subtract(targetPoint);
+      map.panBy([panOffset.x, panOffset.y], { animate: false });
+    } finally {
+      compassState.isApplyingCompassView = false;
+    }
+  }
+
+  function applyMapRotation(map, rotationDegrees, pivotPosition) {
     const pane = map.getPane('mapPane');
     if (!pane) {
       return;
@@ -299,7 +337,12 @@
       .replace(/ ?rotate\([^)]*\)/g, '')
       .trim();
 
-    pane.style.transformOrigin = '50% 50%';
+    if (pivotPosition) {
+      const pivotPoint = map.latLngToContainerPoint([pivotPosition.latitude, pivotPosition.longitude]);
+      pane.style.transformOrigin = `${pivotPoint.x}px ${pivotPoint.y}px`;
+    } else {
+      pane.style.transformOrigin = '50% 50%';
+    }
     pane.style.transform =
       rotationDegrees === 0
         ? transformWithoutRotation
@@ -312,6 +355,58 @@
     }
 
     compassState.northIndicator.style.transform = `rotate(${-headingDegrees}deg)`;
+  }
+
+  async function attemptEnableCompassFollow(map, compassState) {
+    const button = compassState.locationButton;
+    if (!button || !compassState.headingController) {
+      setStatusMessage('Compass unavailable: heading controller not ready.');
+      return;
+    }
+
+    const preflightStatus = compassState.headingController.getStatus();
+    if (!preflightStatus.supported) {
+      setStatusMessage('Compass unavailable on this device/browser.');
+      return;
+    }
+
+    const permissionStatus = await compassState.headingController.requestPermissionIfNeeded();
+    if (permissionStatus.status === 'permission-denied') {
+      setStatusMessage('Compass permission denied. Compass-follow is unavailable.');
+      return;
+    }
+    if (permissionStatus.status === 'error') {
+      setStatusMessage('Compass permission failed. Compass-follow is unavailable.');
+      return;
+    }
+
+    const startStatus = compassState.headingController.start();
+    if (startStatus.status === 'permission-required') {
+      setStatusMessage('Compass permission required. Tap again to retry.');
+      return;
+    }
+    if (startStatus.status === 'unsupported') {
+      setStatusMessage('Compass unavailable on this device/browser.');
+      return;
+    }
+
+    compassState.isCompassFollowEnabled = true;
+    button.classList.add('is-compass-follow');
+    focusDeviceInCompassView(map, compassState);
+    setStatusMessage('Compass-follow starting…');
+  }
+
+  function disableCompassFollow(map, compassState) {
+    if (compassState.headingController) {
+      compassState.headingController.stop();
+    }
+    compassState.isCompassFollowEnabled = false;
+    compassState.isRecenteringPrimed = false;
+    if (compassState.locationButton) {
+      compassState.locationButton.classList.remove('is-compass-follow');
+    }
+    applyMapRotation(map, 0);
+    updateNorthIndicatorRotation(compassState, 0);
   }
 
   function createLocationControl(map, compassState) {
@@ -332,11 +427,7 @@
           }
 
           if (compassState.isCompassFollowEnabled) {
-            compassState.isCompassFollowEnabled = false;
-            compassState.isRecenteringPrimed = false;
-            button.classList.remove('is-compass-follow');
-            applyMapRotation(map, 0);
-            updateNorthIndicatorRotation(compassState, 0);
+            disableCompassFollow(map, compassState);
             map.setView(
               [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
               map.getZoom()
@@ -344,18 +435,13 @@
             return;
           }
 
-          map.setView(
-            [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
-            map.getZoom()
-          );
-
           if (compassState.isRecenteringPrimed) {
-            compassState.isCompassFollowEnabled = true;
-            button.classList.add('is-compass-follow');
-            if (typeof compassState.headingDegrees === 'number') {
-              applyMapRotation(map, -compassState.headingDegrees);
-              updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
-            }
+            attemptEnableCompassFollow(map, compassState);
+          } else {
+            map.setView(
+              [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
+              map.getZoom()
+            );
           }
 
           compassState.isRecenteringPrimed = !compassState.isRecenteringPrimed;
@@ -372,27 +458,55 @@
       if (!compassState.isCompassFollowEnabled) {
         return;
       }
-      applyMapRotation(map, -compassState.headingDegrees);
+      applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
     };
 
-    const handleDeviceOrientation = (event) => {
-      if (event && typeof event.webkitCompassHeading === 'number') {
-        compassState.headingDegrees = normalizeBearing(event.webkitCompassHeading);
-      } else if (event && typeof event.alpha === 'number') {
-        compassState.headingDegrees = normalizeBearing(360 - event.alpha);
-      } else {
+    if (typeof window.createHeadingController !== 'function') {
+      console.warn('[heading] createHeadingController unavailable');
+      return;
+    }
+
+    compassState.headingController = window.createHeadingController();
+    compassState.unsubscribeHeading = compassState.headingController.subscribe((headingStatus) => {
+      if (typeof headingStatus.headingDegrees === 'number') {
+        compassState.headingDegrees = headingStatus.headingDegrees;
+        updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+        if (compassState.isCompassFollowEnabled) {
+          focusDeviceInCompassView(map, compassState);
+          applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
+        }
+      }
+
+      if (!compassState.isCompassFollowEnabled) {
         return;
       }
 
-      if (compassState.isCompassFollowEnabled) {
-        applyMapRotation(map, -compassState.headingDegrees);
+      if (headingStatus.status === 'active' || headingStatus.status === 'active-degraded') {
+        setStatusMessage(
+          headingStatus.status === 'active'
+            ? 'Compass-follow active.'
+            : 'Compass-follow active (degraded heading).'
+        );
+        return;
       }
-      updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
-    };
 
-    window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
-    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
-    map.on('move zoom zoomanim viewreset resize', reapplyCompassRotation);
+      if (
+        headingStatus.status === 'permission-denied' ||
+        headingStatus.status === 'unsupported' ||
+        headingStatus.status === 'no-heading-data' ||
+        headingStatus.status === 'error'
+      ) {
+        disableCompassFollow(map, compassState);
+        setStatusMessage(`Compass-follow unavailable: ${headingStatus.status}.`);
+      }
+    });
+
+    map.on('move zoom zoomanim viewreset resize', () => {
+      if (compassState.isCompassFollowEnabled && !compassState.isApplyingCompassView) {
+        focusDeviceInCompassView(map, compassState);
+      }
+      reapplyCompassRotation();
+    });
     map.on('dragstart zoomstart', () => {
       compassState.isRecenteringPrimed = false;
     });
@@ -463,14 +577,25 @@
 
     setStatusMessage('Requesting your current location...');
 
+    const handlePosition = (position) => {
+      const { latitude, longitude } = position.coords;
+      const hasPosition = !!compassState.devicePosition;
+      compassState.devicePosition = { latitude, longitude };
+      upsertCurrentLocationMarker(map, compassState, latitude, longitude);
+      updateDeviceToAircraftOverlay(map, latitude, longitude, overlayState);
+
+      if (!hasPosition) {
+        map.setView([latitude, longitude], FOCUS_ZOOM);
+        setStatusMessage('Showing your current device position.');
+      } else if (compassState.isCompassFollowEnabled) {
+        focusDeviceInCompassView(map, compassState);
+        applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
+      }
+    };
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        map.setView([latitude, longitude], FOCUS_ZOOM);
-        placeCurrentLocationMarker(map, latitude, longitude);
-        compassState.devicePosition = { latitude, longitude };
-        updateDeviceToAircraftOverlay(map, latitude, longitude, overlayState);
-        setStatusMessage('Showing your current device position.');
+        handlePosition(position);
       },
       (error) => {
         const details = error && error.message ? ` (${error.message})` : '';
@@ -484,6 +609,20 @@
         maximumAge: 0
       }
     );
+
+    if (compassState.watchPositionId === null) {
+      compassState.watchPositionId = navigator.geolocation.watchPosition(
+        (position) => {
+          handlePosition(position);
+        },
+        () => {},
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 1000
+        }
+      );
+    }
   }
 
   const mapSetup = createMap();
@@ -501,7 +640,12 @@
     isCompassFollowEnabled: false,
     isRecenteringPrimed: false,
     locationButton: null,
-    northIndicator: null
+    northIndicator: null,
+    headingController: null,
+    unsubscribeHeading: null,
+    currentLocationMarker: null,
+    watchPositionId: null,
+    isApplyingCompassView: false
   };
   createLayersButtonControl(map, mapSetup.baseLayers);
   createLocationControl(map, compassState);
