@@ -10,7 +10,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-## PR7 validation checklist
+## PR7.1 validation checklist
 
 1. Load the app in a desktop browser and confirm the map renders.
 2. Load on iPhone/iPad Safari and confirm the map renders and remains usable in portrait mode.
@@ -29,7 +29,11 @@ Then open `http://localhost:8000`.
 15. Confirm degraded heading fallback reports clearly (status/debug text indicates degraded mode) rather than silently acting as fully trusted heading.
 16. Confirm if heading is denied/unsupported/no data, compass-follow does not stay visually active and a clear status message is shown.
 17. Confirm repeatedly toggling compass-follow on/off does not create duplicate heading listeners or unstable rotation.
-18. Confirm the small north indicator remains visible and logically indicates north as heading changes.
-19. Confirm a metric map scale appears at the bottom-left.
-20. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
-21. Confirm browser console has no runtime errors during these flows.
+18. Confirm compass-follow rotation pivots around the on-screen current-location marker (not around map center/top-left tile origin).
+19. Confirm entering compass-follow places current location lower-center (about one-third up from bottom) and keeps that placement while heading/location updates continue.
+20. Confirm grey empty areas during rotation are materially reduced due to larger surrounding tile retention.
+21. Confirm nearby panning benefits from tile buffering without obvious performance regressions.
+22. Confirm the small north indicator remains visible and logically indicates north as heading changes.
+23. Confirm a metric map scale appears at the bottom-left.
+24. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
+25. Confirm browser console has no runtime errors during these flows.
