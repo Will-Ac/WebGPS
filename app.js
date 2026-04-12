@@ -92,6 +92,7 @@
       center: FALLBACK_CENTER,
       zoom: FALLBACK_ZOOM,
       maxZoom: MAX_MAP_ZOOM,
+      doubleClickZoom: false,
       attributionControl: false,
       dragPan: {
         inertia: true,
@@ -616,10 +617,7 @@
     if (!compassState.northIndicatorWrap) {
       return;
     }
-    compassState.northIndicatorWrap.classList.toggle(
-      'is-hidden',
-      !compassState.isCompassFollowEnabled
-    );
+    compassState.northIndicatorWrap.classList.remove('is-hidden');
   }
 
   function createLayersButtonControl(map, controlsRoot, mapState) {
@@ -675,10 +673,14 @@
 
   function createNorthIndicatorControl(controlsRoot, compassState) {
     const container = document.createElement('div');
-    container.className = 'gm-ios-north-indicator-wrap gm-control-slot gm-slot-middle is-hidden';
+    container.className = 'gm-ios-north-indicator-wrap gm-control-slot gm-slot-middle';
     const indicator = document.createElement('div');
     indicator.className = 'gm-ios-north-indicator gm-ios-control-button';
     indicator.appendChild(createControlIcon(CONTROL_ICON_PATHS.NORTH, 'North'));
+    const northLabel = document.createElement('span');
+    northLabel.className = 'gm-north-label';
+    northLabel.textContent = 'N';
+    indicator.appendChild(northLabel);
     indicator.setAttribute('aria-label', 'North indicator');
     container.appendChild(indicator);
     controlsRoot.appendChild(container);
@@ -752,11 +754,7 @@
           status: headingStatus.status,
           normalizedHeading: headingStatus.headingDegrees
         });
-        if (compassState.isCompassFollowEnabled) {
-          updateNorthIndicatorRotation(compassState, map.getBearing());
-        } else {
-          updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
-        }
+        updateNorthIndicatorRotation(compassState, map.getBearing());
         applyCompassBearingFromHeading(map, compassState, compassState.headingDegrees);
       }
 
@@ -791,6 +789,9 @@
 
     map.on('dragstart zoomstart', () => {
       compassState.isRecenteringPrimed = false;
+    });
+    map.on('rotate', () => {
+      updateNorthIndicatorRotation(compassState, map.getBearing());
     });
 
     const handleUserCameraGesture = (eventName) => {
@@ -1023,6 +1024,8 @@
   createLayersButtonControl(map, controlsRoot, mapSetup);
   createLocationControl(map, controlsRoot, compassState);
   createNorthIndicatorControl(controlsRoot, compassState);
+  updateNorthIndicatorVisibility(compassState);
+  updateNorthIndicatorRotation(compassState, map.getBearing());
   bindHeadingTracking(map, compassState);
   placeMockDroneMarker(map);
   requestCurrentLocation(map, overlayState, compassState);
