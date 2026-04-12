@@ -79,7 +79,7 @@ body {
 .map-overlay-direction-arrow {
   position: absolute;
   transform: translate(-50%, -50%);
-  color: #1d4ed8;
+  color: #d32f2f;
   font-size: 1.35rem;
   font-weight: 700;
   line-height: 1;

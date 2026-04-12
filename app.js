@@ -313,8 +313,8 @@
         y: clamp((clipped.start.y + clipped.end.y) / 2, inset, height - inset)
       };
       arrowPoint = {
-        x: clamp(pillPoint.x + normalizedDirection.x * 28, inset, width - inset),
-        y: clamp(pillPoint.y + normalizedDirection.y * 28, inset, height - inset)
+        x: clamp(pillPoint.x + normalizedDirection.x * 36, inset, width - inset),
+        y: clamp(pillPoint.y + normalizedDirection.y * 36, inset, height - inset)
       };
       arrowAngle = toDegrees(Math.atan2(normalizedDirection.y, normalizedDirection.x));
     } else {
@@ -343,11 +343,11 @@
     }
 
     const arrowSeparation = Math.hypot(arrowPoint.x - pillPoint.x, arrowPoint.y - pillPoint.y);
-    if (arrowSeparation < 24) {
+    if (arrowSeparation < 30) {
       const angleRadians = Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x);
       arrowPoint = {
-        x: clamp(pillPoint.x + Math.cos(angleRadians) * 24, inset, width - inset),
-        y: clamp(pillPoint.y + Math.sin(angleRadians) * 24, inset, height - inset)
+        x: clamp(pillPoint.x + Math.cos(angleRadians) * 30, inset, width - inset),
+        y: clamp(pillPoint.y + Math.sin(angleRadians) * 30, inset, height - inset)
       };
       arrowAngle = toDegrees(angleRadians);
     }
@@ -783,8 +783,8 @@
         type: 'line',
         source: DEVICE_AIRCRAFT_LINE_SOURCE_ID,
         paint: {
-          'line-color': '#1d4ed8',
-          'line-width': 4,
+          'line-color': '#d32f2f',
+          'line-width': 3.3,
           'line-dasharray': [2.5, 2],
           'line-opacity': 0.95
         }
