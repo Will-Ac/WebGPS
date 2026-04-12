@@ -133,3 +133,16 @@ PR8.6 keeps PR8.x map/heading structure and focuses on camera feel and mode beha
 - On manual exit from compass-follow, current map rotation is preserved (no snap back to north-up).
 - Added inertia tuning in map init (`dragPan` inertia options) to improve mobile deceleration feel.
 
+## PR8.7 zoom readout and damped compass rotation
+
+PR8.7 keeps PR8.x architecture and adds two UX-focused improvements:
+
+- Bottom scale now includes a live zoom readout (`Z: n.n`) appended directly to the existing scale control.
+- Compass-follow rotation now uses damped heading smoothing:
+  - raw heading becomes `targetHeading`
+  - `smoothedHeading` moves toward target each animation frame using exponential smoothing
+  - shortest-angle interpolation handles 0/360 wrap correctly
+  - tiny heading deltas are ignored to reduce sensor jitter
+- Bearing is applied with lightweight `map.setBearing(...)` in a single animation loop while compass-follow is active.
+- Loop lifecycle is explicit: starts when compass-follow starts, stops on exit, and avoids duplicate loops.
+

@@ -9,6 +9,8 @@
   const COMPASS_DEBUG_LOGGING = true;
   const CAMERA_EASE_STANDARD_MS = 650;
   const CAMERA_EASE_HEADING_MS = 140;
+  const ROTATION_DAMPING_FACTOR = 0.16;
+  const ROTATION_NOISE_THRESHOLD_DEGREES = 0.5;
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
     longitude: -2.5859117
@@ -93,8 +95,39 @@
 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+    attachZoomReadoutToScale(map);
 
     return { map, styleNames: Object.keys(MAP_STYLES) };
+  }
+
+  function attachZoomReadoutToScale(map) {
+    const ensureZoomReadoutElement = () => {
+      const scaleElement = map.getContainer().querySelector('.maplibregl-ctrl-scale');
+      if (!scaleElement) {
+        return null;
+      }
+
+      let zoomReadout = scaleElement.querySelector('.gm-zoom-readout');
+      if (!zoomReadout) {
+        zoomReadout = document.createElement('span');
+        zoomReadout.className = 'gm-zoom-readout';
+        scaleElement.appendChild(zoomReadout);
+      }
+      return zoomReadout;
+    };
+
+    const updateZoomReadout = () => {
+      const zoomReadout = ensureZoomReadoutElement();
+      if (!zoomReadout) {
+        return;
+      }
+      zoomReadout.textContent = ` | Z: ${map.getZoom().toFixed(1)}`;
+    };
+
+    map.on('load', updateZoomReadout);
+    map.on('zoom', updateZoomReadout);
+    map.on('move', updateZoomReadout);
+    map.on('styledata', updateZoomReadout);
   }
 
   function createMarkerElement(className) {
@@ -301,30 +334,11 @@
       return;
     }
 
-    const targetBearing = headingToMapBearing(headingDegrees);
-    const currentBearing =
-      typeof compassState.lastAppliedMapBearing === 'number'
-        ? compassState.lastAppliedMapBearing
-        : map.getBearing();
-    const finalBearing = resolveNearestBearing(currentBearing, targetBearing);
-    if (compassState.lastAppliedMapBearing === finalBearing) {
-      return;
+    compassState.targetHeadingDegrees = headingDegrees;
+    if (compassState.smoothedHeadingDegrees === null) {
+      compassState.smoothedHeadingDegrees = headingDegrees;
     }
-
-    compassState.lastAppliedMapBearing = finalBearing;
-    debugCompassLog('apply heading -> bearing', {
-      sourceHeading: headingDegrees,
-      normalizedHeading: headingDegrees,
-      targetBearing,
-      finalMapBearing: finalBearing,
-      activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
-    });
-
-    setMapCameraToDevice(map, compassState, {
-      animate: true,
-      duration: CAMERA_EASE_HEADING_MS,
-      bearing: finalBearing
-    });
+    startCompassRotationLoop(map, compassState);
   }
 
   function updateNorthIndicatorRotation(compassState, headingDegrees) {
@@ -334,6 +348,64 @@
 
     // Indicator should rotate opposite to applied map bearing so it keeps pointing north on screen.
     compassState.northIndicator.style.transform = `rotate(${-headingDegrees}deg)`;
+  }
+
+  function shortestAngularDelta(fromDegrees, toDegrees) {
+    return toSigned180(toDegrees - fromDegrees);
+  }
+
+  function stopCompassRotationLoop(compassState) {
+    if (compassState.rotationAnimationFrameId !== null) {
+      cancelAnimationFrame(compassState.rotationAnimationFrameId);
+      compassState.rotationAnimationFrameId = null;
+    }
+  }
+
+  function startCompassRotationLoop(map, compassState) {
+    if (compassState.rotationAnimationFrameId !== null) {
+      return;
+    }
+
+    const step = () => {
+      if (!compassState.isCompassFollowEnabled) {
+        stopCompassRotationLoop(compassState);
+        return;
+      }
+
+      if (
+        typeof compassState.targetHeadingDegrees === 'number' &&
+        typeof compassState.smoothedHeadingDegrees === 'number'
+      ) {
+        const headingDelta = shortestAngularDelta(
+          compassState.smoothedHeadingDegrees,
+          compassState.targetHeadingDegrees
+        );
+
+        if (Math.abs(headingDelta) >= ROTATION_NOISE_THRESHOLD_DEGREES) {
+          compassState.smoothedHeadingDegrees = normalizeBearing(
+            compassState.smoothedHeadingDegrees + headingDelta * ROTATION_DAMPING_FACTOR
+          );
+          const targetBearing = headingToMapBearing(compassState.smoothedHeadingDegrees);
+          const currentBearing = map.getBearing();
+          const finalBearing = resolveNearestBearing(currentBearing, targetBearing);
+
+          map.setBearing(finalBearing);
+          compassState.lastAppliedMapBearing = finalBearing;
+          updateNorthIndicatorRotation(compassState, finalBearing);
+          debugCompassLog('apply heading -> bearing (damped)', {
+            sourceHeading: compassState.targetHeadingDegrees,
+            smoothedHeading: compassState.smoothedHeadingDegrees,
+            targetBearing,
+            finalMapBearing: finalBearing,
+            activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
+          });
+        }
+      }
+
+      compassState.rotationAnimationFrameId = requestAnimationFrame(step);
+    };
+
+    compassState.rotationAnimationFrameId = requestAnimationFrame(step);
   }
 
   async function attemptEnableCompassFollow(map, compassState) {
@@ -371,6 +443,8 @@
 
     compassState.isCompassFollowEnabled = true;
     compassState.lastAppliedMapBearing = null;
+    compassState.targetHeadingDegrees = compassState.headingDegrees;
+    compassState.smoothedHeadingDegrees = compassState.headingDegrees;
     button.classList.add('is-compass-follow');
     setMapCameraToDevice(map, compassState, {
       animate: true,
@@ -380,6 +454,7 @@
     debugCompassLog('compass-follow enabled', {
       activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
     });
+    startCompassRotationLoop(map, compassState);
     setStatusMessage('Compass-follow starting…');
   }
 
@@ -393,6 +468,9 @@
     compassState.isCompassFollowEnabled = false;
     compassState.isRecenteringPrimed = false;
     compassState.lastAppliedMapBearing = null;
+    compassState.targetHeadingDegrees = null;
+    compassState.smoothedHeadingDegrees = null;
+    stopCompassRotationLoop(compassState);
     if (compassState.locationButton) {
       compassState.locationButton.classList.remove('is-compass-follow');
     }
@@ -541,7 +619,11 @@
           status: headingStatus.status,
           normalizedHeading: headingStatus.headingDegrees
         });
-        updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+        if (compassState.isCompassFollowEnabled) {
+          updateNorthIndicatorRotation(compassState, map.getBearing());
+        } else {
+          updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+        }
         applyCompassBearingFromHeading(map, compassState, compassState.headingDegrees);
       }
 
@@ -785,7 +867,10 @@
     watchPositionId: null,
     activeHeadingSubscriptions: 0,
     lastAppliedMapBearing: null,
-    programmaticMoveDepth: 0
+    programmaticMoveDepth: 0,
+    targetHeadingDegrees: null,
+    smoothedHeadingDegrees: null,
+    rotationAnimationFrameId: null
   };
 
   ensureLineLayer(map, overlayState);

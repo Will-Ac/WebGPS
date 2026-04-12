@@ -96,3 +96,13 @@ Then open `http://localhost:8000`.
 6. Confirm panning inertia/deceleration feels natural on mobile.
 7. Confirm layers picker, markers, line, and labels continue working.
 
+## PR8.7 validation checklist
+
+1. Confirm scale control now shows zoom readout text (e.g. `| Z: 17.3`) beside distance scale.
+2. Confirm zoom readout updates continuously during pinch-zoom and button zoom.
+3. Enter compass-follow and confirm rotation is smoother (less jitter) while still responsive.
+4. Confirm heading wrap around north remains stable (no sudden long-turn jump).
+5. Confirm tiny heading noise does not cause visible bearing twitch.
+6. Confirm only one compass rotation animation loop runs and it stops when compass-follow exits.
+7. Confirm existing compass mode entry/exit, lower-third framing, pan-to-exit, markers, and overlays still work.
+

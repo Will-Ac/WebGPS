@@ -68,6 +68,15 @@ body {
 
 .maplibregl-ctrl-scale {
   font-size: 1.5em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.gm-zoom-readout {
+  font-size: 0.62em;
+  color: #2a3b56;
+  font-weight: 600;
 }
 
 .gm-map-controls {
