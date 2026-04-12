@@ -117,3 +117,13 @@ Then open `http://localhost:8000`.
 7. Pan so line is off screen and confirm pill detaches to nearest relevant screen edge and remains readable.
 8. Confirm overlay updates correctly during pan/zoom/rotate/compass-follow and style switching.
 
+## PR8.9 validation checklist
+
+1. Confirm max zoom stops at 18.5.
+2. Confirm current device marker no longer opens/displays the old "Current device position" popup label.
+3. Confirm dashed blue line remains visible after switching between Streets/Satellite/Terrain.
+4. Confirm line redraw persists without requiring fresh geolocation after style switch.
+5. Confirm pill follows pan/zoom/rotation in sync with no visible lag.
+6. Confirm arrow is visible whenever overlay is visible and stays on aircraft side of the pill.
+7. Confirm pill text remains centered and readable with updated opacity/size.
+

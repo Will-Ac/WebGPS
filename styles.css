@@ -47,16 +47,16 @@ body {
   position: absolute;
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   box-sizing: border-box;
   border: 0;
   color: #1d4ed8;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   line-height: 1.15;
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.82);
   border-radius: 0.7rem;
   padding: 0.35rem 0.55rem;
   transform: translate(-50%, -50%);
@@ -65,23 +65,27 @@ body {
 }
 
 .map-overlay-pill-distance {
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   color: #0f2a66;
+  text-align: center;
 }
 
 .map-overlay-pill-bearing {
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   color: #1f3f89;
+  text-align: center;
 }
 
 .map-overlay-direction-arrow {
   position: absolute;
   transform: translate(-50%, -50%);
   color: #1d4ed8;
-  font-size: 1.15rem;
+  font-size: 1.35rem;
+  font-weight: 700;
   line-height: 1;
   text-shadow: 0 0 5px rgba(255, 255, 255, 0.9);
   z-index: 720;
+  pointer-events: none;
 }
 
 .maplibregl-ctrl-bottom-left .maplibregl-ctrl {

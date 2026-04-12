@@ -2,7 +2,7 @@
   const FALLBACK_CENTER = [-98.5795, 39.8283];
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
-  const MAX_MAP_ZOOM = 19;
+  const MAX_MAP_ZOOM = 18.5;
   const COMPASS_ANCHOR_HEIGHT_RATIO = 2 / 3;
   const EARTH_RADIUS_METERS = 6371000;
   const COMPASS_DEBUG_LOGGING = true;
@@ -141,9 +141,7 @@
         element: createMarkerElement('gm-marker gm-marker-device')
       })
         .setLngLat([lng, lat])
-        .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Current device position'))
         .addTo(compassState.map);
-      compassState.currentLocationMarker.togglePopup();
       return;
     }
 
@@ -274,8 +272,7 @@
   }
 
   function setOverlayElementPosition(element, point) {
-    element.style.left = `${point.x}px`;
-    element.style.top = `${point.y}px`;
+    element.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%)`;
   }
 
   function positionOverlayElements(map, overlayState) {
@@ -334,9 +331,20 @@
       arrowAngle = toDegrees(Math.atan2(direction.y, direction.x));
     }
 
+    const arrowSeparation = Math.hypot(arrowPoint.x - pillPoint.x, arrowPoint.y - pillPoint.y);
+    if (arrowSeparation < 24) {
+      const angleRadians = Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x);
+      arrowPoint = {
+        x: clamp(pillPoint.x + Math.cos(angleRadians) * 24, inset, width - inset),
+        y: clamp(pillPoint.y + Math.sin(angleRadians) * 24, inset, height - inset)
+      };
+      arrowAngle = toDegrees(angleRadians);
+    }
+
     setOverlayElementPosition(overlayState.infoPill, pillPoint);
     setOverlayElementPosition(overlayState.directionArrow, arrowPoint);
-    overlayState.directionArrow.style.transform = `translate(-50%, -50%) rotate(${arrowAngle}deg)`;
+    overlayState.directionArrow.style.transform = `translate3d(${arrowPoint.x}px, ${arrowPoint.y}px, 0) translate(-50%, -50%) rotate(${arrowAngle}deg)`;
+    overlayState.directionArrow.hidden = false;
   }
 
   function setMapCameraToDevice(map, compassState, options) {
@@ -758,10 +766,7 @@
       if (!map.getSource(sourceId)) {
         map.addSource(sourceId, {
           type: 'geojson',
-          data: {
-            type: 'FeatureCollection',
-            features: []
-          }
+          data: overlayState.lineData || { type: 'FeatureCollection', features: [] }
         });
       }
 
@@ -780,6 +785,10 @@
       }
 
       overlayState.lineSourceId = sourceId;
+      const source = map.getSource(sourceId);
+      if (source && overlayState.lineData) {
+        source.setData(overlayState.lineData);
+      }
     };
 
     if (map.isStyleLoaded()) {
@@ -801,23 +810,24 @@
 
     if (overlayState.lineSourceId) {
       const source = map.getSource(overlayState.lineSourceId);
+      overlayState.lineData = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [deviceLng, deviceLat],
+                [aircraftLng, aircraftLat]
+              ]
+            },
+            properties: {}
+          }
+        ]
+      };
       if (source) {
-        source.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              geometry: {
-                type: 'LineString',
-                coordinates: [
-                  [deviceLng, deviceLat],
-                  [aircraftLng, aircraftLat]
-                ]
-              },
-              properties: {}
-            }
-          ]
-        });
+        source.setData(overlayState.lineData);
       }
     }
 
@@ -907,6 +917,7 @@
 
   const overlayState = {
     lineSourceId: null,
+    lineData: null,
     infoPill: null,
     directionArrow: null,
     devicePosition: null,
@@ -934,7 +945,7 @@
   };
 
   ensureLineLayer(map, overlayState);
-  map.on('move zoom rotate pitch', () => {
+  map.on('render', () => {
     positionOverlayElements(map, overlayState);
   });
 

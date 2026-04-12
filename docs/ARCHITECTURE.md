@@ -159,3 +159,14 @@ PR8.8 keeps PR8.x mapping/heading structure and refreshes only the device-to-air
   - detached fallback near relevant screen edge when line segment is off screen.
 - Overlay update path is now one coherent pipeline for line + arrow + pill during pan/zoom/rotate/compass-follow/style changes.
 
+## PR8.9 overlay sync, arrow visibility, style-switch redraw, and zoom cap
+
+PR8.9 keeps PR8.x architecture and applies targeted overlay reliability fixes:
+
+- Maximum map zoom is capped at `18.5`.
+- Device marker popup/label is removed (marker remains, no default popup label).
+- Pill/arrow screen positioning now uses `translate3d(...)` transforms and updates on map `render` to remove visible lag during pan/zoom/rotate.
+- Arrow visibility and separation are enforced with viewport clamping and minimum offset from the pill.
+- Line source data is cached in app state and reapplied on style reload so dashed line survives Streets/Satellite/Terrain switches.
+- Pill text alignment/size and opacity were tuned for readability while keeping the same compact overlay style.
+
