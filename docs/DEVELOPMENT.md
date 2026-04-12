@@ -77,3 +77,12 @@ Then open `http://localhost:8000`.
 6. Confirm no secondary heading source takes over once a higher-priority source is selected unless required.
 7. Confirm lower-third placement, layers picker, markers, overlays, and north indicator still behave as before.
 
+## PR8.5 validation checklist
+
+1. Enter compass-follow and rotate device clockwise about 90°; confirm map rotates clockwise about 90°.
+2. Rotate device one full clockwise 360°; confirm map performs one full cycle (no apparent 2x motion).
+3. Confirm debug logs show heading input and target/final MapLibre bearing with matching sign convention.
+4. Confirm compass mode enter/exit logs and active heading subscription count remain stable across repeated toggles.
+5. Confirm north indicator still points north while map rotates.
+6. Confirm recenter flow, lower-third positioning, layers picker, markers, and overlays still work as before.
+

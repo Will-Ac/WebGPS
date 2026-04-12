@@ -112,3 +112,13 @@ PR8.3 keeps PR8/PR8.2 structure but fixes the remaining over-rotation when headi
 - `js/heading.js` now ignores lower/equal-priority alternate sources once a source is selected, preventing parallel event streams from fighting each other.
 - Additional concise debug logs now show raw event type/source values, extracted heading, normalized heading updates, final target bearing, and final bearing sent to MapLibre.
 
+## PR8.5 MapLibre bearing sign convention fix
+
+PR8.5 keeps PR8.x structure and fixes the compass-follow sign/convention bug:
+
+- The heading module already emits compass-style heading (`0..360`, clockwise from north).
+- Previous PR8.x code inverted heading sign before applying to MapLibre bearing.
+- Root cause: that sign inversion made map rotation direction oppose heading convention and caused apparent doubled relative rotation with phone movement.
+- Fix: heading now maps directly to MapLibre bearing (`bearing = heading`, normalized), applied once through the existing absolute heading pipeline.
+- North indicator remains rotated opposite to map bearing so it still points to north on screen.
+

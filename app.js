@@ -268,7 +268,10 @@
   }
 
   function headingToMapBearing(headingDegrees) {
-    return -normalizeBearing(headingDegrees);
+    // Heading module output is compass-style (0..360, clockwise from north).
+    // MapLibre bearing is the clockwise direction at the top of the map.
+    // So the correct convention mapping is direct (no sign inversion).
+    return normalizeBearing(headingDegrees);
   }
 
   function toSigned180(degrees) {
@@ -312,6 +315,7 @@
       return;
     }
 
+    // Indicator should rotate opposite to applied map bearing so it keeps pointing north on screen.
     compassState.northIndicator.style.transform = `rotate(${-headingDegrees}deg)`;
   }
 
