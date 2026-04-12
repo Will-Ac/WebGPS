@@ -297,6 +297,11 @@
     let pillPoint;
     let arrowPoint;
     let arrowAngle;
+    const pillRect = overlayState.infoPill.getBoundingClientRect();
+    const arrowRect = overlayState.directionArrow.getBoundingClientRect();
+    const pillRadiusPixels = Math.hypot(pillRect.width / 2, pillRect.height / 2);
+    const arrowRadiusPixels = Math.max(arrowRect.width, arrowRect.height) / 2;
+    const arrowOffsetPixels = pillRadiusPixels + arrowRadiusPixels + 8;
 
     if (clipped) {
       const lineDirection = {
@@ -313,8 +318,8 @@
         y: clamp((clipped.start.y + clipped.end.y) / 2, inset, height - inset)
       };
       arrowPoint = {
-        x: clamp(pillPoint.x + normalizedDirection.x * 36, inset, width - inset),
-        y: clamp(pillPoint.y + normalizedDirection.y * 36, inset, height - inset)
+        x: clamp(pillPoint.x + normalizedDirection.x * arrowOffsetPixels, inset, width - inset),
+        y: clamp(pillPoint.y + normalizedDirection.y * arrowOffsetPixels, inset, height - inset)
       };
       arrowAngle = toDegrees(Math.atan2(normalizedDirection.y, normalizedDirection.x));
     } else {
@@ -336,18 +341,26 @@
         };
       }
       arrowPoint = {
-        x: clamp(pillPoint.x + direction.x * 0.12, inset, width - inset),
-        y: clamp(pillPoint.y + direction.y * 0.12, inset, height - inset)
+        x: clamp(
+          pillPoint.x + Math.cos(Math.atan2(direction.y, direction.x)) * arrowOffsetPixels,
+          inset,
+          width - inset
+        ),
+        y: clamp(
+          pillPoint.y + Math.sin(Math.atan2(direction.y, direction.x)) * arrowOffsetPixels,
+          inset,
+          height - inset
+        )
       };
       arrowAngle = toDegrees(Math.atan2(direction.y, direction.x));
     }
 
     const arrowSeparation = Math.hypot(arrowPoint.x - pillPoint.x, arrowPoint.y - pillPoint.y);
-    if (arrowSeparation < 30) {
+    if (arrowSeparation < arrowOffsetPixels) {
       const angleRadians = Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x);
       arrowPoint = {
-        x: clamp(pillPoint.x + Math.cos(angleRadians) * 30, inset, width - inset),
-        y: clamp(pillPoint.y + Math.sin(angleRadians) * 30, inset, height - inset)
+        x: clamp(pillPoint.x + Math.cos(angleRadians) * arrowOffsetPixels, inset, width - inset),
+        y: clamp(pillPoint.y + Math.sin(angleRadians) * arrowOffsetPixels, inset, height - inset)
       };
       arrowAngle = toDegrees(angleRadians);
     }
