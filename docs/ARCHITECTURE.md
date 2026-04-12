@@ -146,3 +146,16 @@ PR8.7 keeps PR8.x architecture and adds two UX-focused improvements:
 - Bearing is applied with lightweight `map.setBearing(...)` in a single animation loop while compass-follow is active.
 - Loop lifecycle is explicit: starts when compass-follow starts, stops on exit, and avoids duplicate loops.
 
+## PR8.8 line/arrow/pill overlay refresh
+
+PR8.8 keeps PR8.x mapping/heading structure and refreshes only the device-to-aircraft overlay system:
+
+- Restores the device-to-aircraft line as a thicker blue dashed MapLibre line layer for better readability.
+- Adds a directional arrow overlay along the line that points toward the aircraft side.
+- Replaces split distance/bearing labels with one adaptive two-line pill (`distance` on first line, `bearing` on second line).
+- Pill stays upright on screen (no line-angle text rotation).
+- Pill position now adapts using screen-space visibility logic:
+  - centered on visible line segment when visible
+  - detached fallback near relevant screen edge when line segment is off screen.
+- Overlay update path is now one coherent pipeline for line + arrow + pill during pan/zoom/rotate/compass-follow/style changes.
+

@@ -106,3 +106,14 @@ Then open `http://localhost:8000`.
 6. Confirm only one compass rotation animation loop runs and it stops when compass-follow exits.
 7. Confirm existing compass mode entry/exit, lower-third framing, pan-to-exit, markers, and overlays still work.
 
+## PR8.8 validation checklist
+
+1. Confirm the blue dashed device-to-aircraft line is visible and thicker than previous implementation.
+2. Confirm a direction arrow is shown on the aircraft side of the pill and points toward aircraft direction.
+3. Confirm distance/bearing appears in one two-line pill (distance first line, bearing second line).
+4. Confirm distance formatting: metres below 1000 m, kilometres with two decimals at/above 1000 m.
+5. Confirm pill text stays upright during map rotation.
+6. Confirm pill remains centered on the visible line segment when line is on screen.
+7. Pan so line is off screen and confirm pill detaches to nearest relevant screen edge and remains readable.
+8. Confirm overlay updates correctly during pan/zoom/rotate/compass-follow and style switching.
+

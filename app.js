@@ -4,7 +4,6 @@
   const FOCUS_ZOOM = 15;
   const MAX_MAP_ZOOM = 19;
   const COMPASS_ANCHOR_HEIGHT_RATIO = 2 / 3;
-  const LABEL_OFFSET_PIXELS = 16;
   const EARTH_RADIUS_METERS = 6371000;
   const COMPASS_DEBUG_LOGGING = true;
   const CAMERA_EASE_STANDARD_MS = 650;
@@ -197,88 +196,147 @@
   }
 
   function ensureOverlayElements(overlayState) {
-    if (overlayState.distanceLabel && overlayState.bearingLabel) {
+    if (overlayState.infoPill && overlayState.directionArrow) {
       return;
     }
 
-    overlayState.distanceLabel = document.createElement('div');
-    overlayState.distanceLabel.className = 'map-overlay-label leaflet-control-distance-label';
+    overlayState.infoPill = document.createElement('div');
+    overlayState.infoPill.className = 'map-overlay-pill';
+    overlayState.infoPill.innerHTML =
+      '<div class="map-overlay-pill-distance"></div><div class="map-overlay-pill-bearing"></div>';
 
-    overlayState.bearingLabel = document.createElement('div');
-    overlayState.bearingLabel.className = 'map-overlay-label leaflet-control-bearing-label';
+    overlayState.directionArrow = document.createElement('div');
+    overlayState.directionArrow.className = 'map-overlay-direction-arrow';
+    overlayState.directionArrow.textContent = '➤';
 
-    overlayState.container.appendChild(overlayState.distanceLabel);
-    overlayState.container.appendChild(overlayState.bearingLabel);
+    overlayState.container.appendChild(overlayState.directionArrow);
+    overlayState.container.appendChild(overlayState.infoPill);
   }
 
-  function calculateLabelPosition(map, startLat, startLng, endLat, endLng, distancePixels) {
-    const startPoint = map.project([startLng, startLat]);
-    const endPoint = map.project([endLng, endLat]);
-    const midX = (startPoint.x + endPoint.x) / 2;
-    const midY = (startPoint.y + endPoint.y) / 2;
+  function formatDistance(distanceMeters) {
+    if (distanceMeters < 1000) {
+      return `${Math.round(distanceMeters)} m`;
+    }
+    return `${(distanceMeters / 1000).toFixed(2)} km`;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function clipLineToViewport(startPoint, endPoint, width, height, padding) {
+    const minX = padding;
+    const minY = padding;
+    const maxX = width - padding;
+    const maxY = height - padding;
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const normalX = -dy / length;
-    const normalY = dx / length;
-    const aboveX = normalY < 0 ? normalX : -normalX;
-    const aboveY = normalY < 0 ? normalY : -normalY;
+    let t0 = 0;
+    let t1 = 1;
+
+    const p = [-dx, dx, -dy, dy];
+    const q = [
+      startPoint.x - minX,
+      maxX - startPoint.x,
+      startPoint.y - minY,
+      maxY - startPoint.y
+    ];
+
+    for (let i = 0; i < 4; i += 1) {
+      if (p[i] === 0) {
+        if (q[i] < 0) {
+          return null;
+        }
+      } else {
+        const r = q[i] / p[i];
+        if (p[i] < 0) {
+          if (r > t1) {
+            return null;
+          }
+          if (r > t0) {
+            t0 = r;
+          }
+        } else {
+          if (r < t0) {
+            return null;
+          }
+          if (r < t1) {
+            t1 = r;
+          }
+        }
+      }
+    }
 
     return {
-      above: {
-        x: midX + aboveX * distancePixels,
-        y: midY + aboveY * distancePixels
-      },
-      below: {
-        x: midX - aboveX * distancePixels,
-        y: midY - aboveY * distancePixels
-      }
+      start: { x: startPoint.x + t0 * dx, y: startPoint.y + t0 * dy },
+      end: { x: startPoint.x + t1 * dx, y: startPoint.y + t1 * dy }
     };
   }
 
-  function calculateLineAngleDegrees(map, startLat, startLng, endLat, endLng) {
-    const startPoint = map.project([startLng, startLat]);
-    const endPoint = map.project([endLng, endLat]);
-    return toDegrees(Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x));
+  function setOverlayElementPosition(element, point) {
+    element.style.left = `${point.x}px`;
+    element.style.top = `${point.y}px`;
   }
 
-  function setLabelPosition(labelEl, point, angleDegrees) {
-    if (!labelEl) {
+  function positionOverlayElements(map, overlayState) {
+    if (!overlayState.devicePosition || !overlayState.infoPill || !overlayState.directionArrow) {
       return;
     }
 
-    labelEl.style.left = `${point.x}px`;
-    labelEl.style.top = `${point.y}px`;
-    labelEl.style.transform = `translate(-50%, -50%) rotate(${angleDegrees}deg)`;
-  }
+    const viewport = map.getContainer().getBoundingClientRect();
+    const width = viewport.width;
+    const height = viewport.height;
+    const inset = 20;
 
-  function positionOverlayLabels(map, overlayState) {
-    if (!overlayState.devicePosition || !overlayState.distanceLabel || !overlayState.bearingLabel) {
-      return;
+    const devicePoint = map.project([
+      overlayState.devicePosition.longitude,
+      overlayState.devicePosition.latitude
+    ]);
+    const aircraftPoint = map.project([MOCK_DRONE_POSITION.longitude, MOCK_DRONE_POSITION.latitude]);
+    const clipped = clipLineToViewport(devicePoint, aircraftPoint, width, height, inset);
+
+    let pillPoint;
+    let arrowPoint;
+    let arrowAngle;
+
+    if (clipped) {
+      pillPoint = {
+        x: clamp((clipped.start.x + clipped.end.x) / 2, inset, width - inset),
+        y: clamp((clipped.start.y + clipped.end.y) / 2, inset, height - inset)
+      };
+      arrowPoint = {
+        x: clamp(pillPoint.x + (aircraftPoint.x - pillPoint.x) * 0.6, inset, width - inset),
+        y: clamp(pillPoint.y + (aircraftPoint.y - pillPoint.y) * 0.6, inset, height - inset)
+      };
+      arrowAngle = toDegrees(Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x));
+    } else {
+      const center = { x: width / 2, y: height / 2 };
+      const direction = {
+        x: aircraftPoint.x - center.x,
+        y: aircraftPoint.y - center.y
+      };
+      const useHorizontal = Math.abs(direction.x) > Math.abs(direction.y);
+      if (useHorizontal) {
+        pillPoint = {
+          x: direction.x >= 0 ? width - inset : inset,
+          y: clamp(center.y + direction.y * 0.15, inset, height - inset)
+        };
+      } else {
+        pillPoint = {
+          x: clamp(center.x + direction.x * 0.15, inset, width - inset),
+          y: direction.y >= 0 ? height - inset : inset
+        };
+      }
+      arrowPoint = {
+        x: clamp(pillPoint.x + direction.x * 0.12, inset, width - inset),
+        y: clamp(pillPoint.y + direction.y * 0.12, inset, height - inset)
+      };
+      arrowAngle = toDegrees(Math.atan2(direction.y, direction.x));
     }
 
-    const aircraftLat = MOCK_DRONE_POSITION.latitude;
-    const aircraftLng = MOCK_DRONE_POSITION.longitude;
-    const startLat = overlayState.devicePosition.latitude;
-    const startLng = overlayState.devicePosition.longitude;
-    const labelPositions = calculateLabelPosition(
-      map,
-      startLat,
-      startLng,
-      aircraftLat,
-      aircraftLng,
-      LABEL_OFFSET_PIXELS
-    );
-    const lineAngleDegrees = calculateLineAngleDegrees(
-      map,
-      startLat,
-      startLng,
-      aircraftLat,
-      aircraftLng
-    );
-
-    setLabelPosition(overlayState.distanceLabel, labelPositions.above, lineAngleDegrees);
-    setLabelPosition(overlayState.bearingLabel, labelPositions.below, lineAngleDegrees);
+    setOverlayElementPosition(overlayState.infoPill, pillPoint);
+    setOverlayElementPosition(overlayState.directionArrow, arrowPoint);
+    overlayState.directionArrow.style.transform = `translate(-50%, -50%) rotate(${arrowAngle}deg)`;
   }
 
   function setMapCameraToDevice(map, compassState, options) {
@@ -714,9 +772,9 @@
           source: sourceId,
           paint: {
             'line-color': '#1d4ed8',
-            'line-width': 2,
-            'line-dasharray': [3, 3],
-            'line-opacity': 0.9
+            'line-width': 4,
+            'line-dasharray': [2.5, 2],
+            'line-opacity': 0.95
           }
         });
       }
@@ -766,9 +824,11 @@
     const distanceMeters = calculateDistanceMeters(deviceLat, deviceLng, aircraftLat, aircraftLng);
     const bearingDegrees = calculateBearingDegrees(deviceLat, deviceLng, aircraftLat, aircraftLng);
 
-    overlayState.distanceLabel.textContent = `${Math.round(distanceMeters)} m`;
-    overlayState.bearingLabel.textContent = `${Math.round(bearingDegrees)}°`;
-    positionOverlayLabels(map, overlayState);
+    overlayState.infoPill.querySelector('.map-overlay-pill-distance').textContent =
+      formatDistance(distanceMeters);
+    overlayState.infoPill.querySelector('.map-overlay-pill-bearing').textContent =
+      `${Math.round(bearingDegrees)}°`;
+    positionOverlayElements(map, overlayState);
   }
 
   function requestCurrentLocation(map, overlayState, compassState) {
@@ -847,8 +907,8 @@
 
   const overlayState = {
     lineSourceId: null,
-    distanceLabel: null,
-    bearingLabel: null,
+    infoPill: null,
+    directionArrow: null,
     devicePosition: null,
     container: overlayContainer
   };
@@ -875,7 +935,7 @@
 
   ensureLineLayer(map, overlayState);
   map.on('move zoom rotate pitch', () => {
-    positionOverlayLabels(map, overlayState);
+    positionOverlayElements(map, overlayState);
   });
 
   createLayersButtonControl(map, controlsRoot, mapSetup);

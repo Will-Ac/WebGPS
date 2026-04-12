@@ -43,22 +43,45 @@ body {
   z-index: 700;
 }
 
-.map-overlay-label {
+.map-overlay-pill {
   position: absolute;
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
   box-sizing: border-box;
   border: 0;
   color: #1d4ed8;
-  font-size: 0.775rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.15;
   white-space: nowrap;
-  transform-origin: center center;
-  background: rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  padding: 0.22rem 0.45rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 0.7rem;
+  padding: 0.35rem 0.55rem;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 7px rgba(17, 24, 39, 0.18);
+  z-index: 730;
+}
+
+.map-overlay-pill-distance {
+  font-size: 0.82rem;
+  color: #0f2a66;
+}
+
+.map-overlay-pill-bearing {
+  font-size: 0.75rem;
+  color: #1f3f89;
+}
+
+.map-overlay-direction-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #1d4ed8;
+  font-size: 1.15rem;
+  line-height: 1;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.9);
+  z-index: 720;
 }
 
 .maplibregl-ctrl-bottom-left .maplibregl-ctrl {
