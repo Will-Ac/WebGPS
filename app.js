@@ -677,10 +677,6 @@
     const indicator = document.createElement('div');
     indicator.className = 'gm-ios-north-indicator gm-ios-control-button';
     indicator.appendChild(createControlIcon(CONTROL_ICON_PATHS.NORTH, 'North'));
-    const northLabel = document.createElement('span');
-    northLabel.className = 'gm-north-label';
-    northLabel.textContent = 'N';
-    indicator.appendChild(northLabel);
     indicator.setAttribute('aria-label', 'North indicator');
     container.appendChild(indicator);
     controlsRoot.appendChild(container);
