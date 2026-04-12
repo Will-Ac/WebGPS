@@ -12,6 +12,12 @@
   const CAMERA_EASE_HEADING_MS = 140;
   const ROTATION_DAMPING_FACTOR = 0.16;
   const ROTATION_NOISE_THRESHOLD_DEGREES = 0.5;
+  const CONTROL_ICON_PATHS = {
+    NORTH: 'assets/icons/NORTH.svg',
+    COMPASS: 'assets/icons/COMPASS.svg',
+    LAYERS: 'assets/icons/LAYERS.svg',
+    LOCATION: 'assets/icons/LOCATION.svg'
+  };
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
     longitude: -2.5859117
@@ -536,6 +542,8 @@
     compassState.targetHeadingDegrees = compassState.headingDegrees;
     compassState.smoothedHeadingDegrees = compassState.headingDegrees;
     button.classList.add('is-compass-follow');
+    updateLocationCompassIcon(compassState);
+    updateNorthIndicatorVisibility(compassState);
     setMapCameraToDevice(map, compassState, {
       animate: true,
       duration: CAMERA_EASE_STANDARD_MS,
@@ -564,6 +572,8 @@
     if (compassState.locationButton) {
       compassState.locationButton.classList.remove('is-compass-follow');
     }
+    updateLocationCompassIcon(compassState);
+    updateNorthIndicatorVisibility(compassState);
 
     if (!shouldKeepCurrentBearing) {
       map.setBearing(0);
@@ -583,14 +593,43 @@
     return controlsRoot;
   }
 
+  function createControlIcon(path, altText) {
+    const icon = document.createElement('img');
+    icon.className = 'gm-control-icon-image';
+    icon.src = path;
+    icon.alt = altText;
+    return icon;
+  }
+
+  function updateLocationCompassIcon(compassState) {
+    if (!compassState.locationIconImage) {
+      return;
+    }
+    const isCompassMode = compassState.isCompassFollowEnabled;
+    compassState.locationIconImage.src = isCompassMode
+      ? CONTROL_ICON_PATHS.COMPASS
+      : CONTROL_ICON_PATHS.LOCATION;
+    compassState.locationIconImage.alt = isCompassMode ? 'Compass mode active' : 'Location';
+  }
+
+  function updateNorthIndicatorVisibility(compassState) {
+    if (!compassState.northIndicatorWrap) {
+      return;
+    }
+    compassState.northIndicatorWrap.classList.toggle(
+      'is-hidden',
+      !compassState.isCompassFollowEnabled
+    );
+  }
+
   function createLayersButtonControl(map, controlsRoot, mapState) {
     const container = document.createElement('div');
-    container.className = 'gm-ios-control-stack';
+    container.className = 'gm-ios-control-stack gm-control-slot gm-slot-top';
     const button = document.createElement('button');
     button.className = 'gm-ios-control-button';
     button.type = 'button';
     button.setAttribute('aria-label', 'Map layers');
-    button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-layers" aria-hidden="true"></span>';
+    button.appendChild(createControlIcon(CONTROL_ICON_PATHS.LAYERS, 'Layers'));
 
     const chooser = document.createElement('div');
     chooser.className = 'gm-ios-layers-chooser';
@@ -636,24 +675,27 @@
 
   function createNorthIndicatorControl(controlsRoot, compassState) {
     const container = document.createElement('div');
-    container.className = 'gm-ios-north-indicator-wrap';
+    container.className = 'gm-ios-north-indicator-wrap gm-control-slot gm-slot-middle is-hidden';
     const indicator = document.createElement('div');
-    indicator.className = 'gm-ios-north-indicator';
-    indicator.innerHTML = '<span class="gm-ios-icon gm-ios-icon-north" aria-hidden="true"></span>';
+    indicator.className = 'gm-ios-north-indicator gm-ios-control-button';
+    indicator.appendChild(createControlIcon(CONTROL_ICON_PATHS.NORTH, 'North'));
     indicator.setAttribute('aria-label', 'North indicator');
     container.appendChild(indicator);
     controlsRoot.appendChild(container);
     compassState.northIndicator = indicator;
+    compassState.northIndicatorWrap = container;
   }
 
   function createLocationControl(map, controlsRoot, compassState) {
     const container = document.createElement('div');
-    container.className = 'gm-ios-location-wrap';
+    container.className = 'gm-ios-location-wrap gm-control-slot gm-slot-bottom';
     const button = document.createElement('button');
     button.className = 'gm-ios-control-button gm-ios-location-button';
     button.type = 'button';
     button.setAttribute('aria-label', 'Recenter map to your location');
-    button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-location" aria-hidden="true"></span>';
+    const iconImage = createControlIcon(CONTROL_ICON_PATHS.LOCATION, 'Location');
+    button.appendChild(iconImage);
+    compassState.locationIconImage = iconImage;
     compassState.locationButton = button;
 
     button.addEventListener('click', () => {
@@ -682,6 +724,7 @@
 
     container.appendChild(button);
     controlsRoot.appendChild(container);
+    updateLocationCompassIcon(compassState);
   }
 
   function bindHeadingTracking(map, compassState) {
@@ -957,7 +1000,9 @@
     isCompassFollowEnabled: false,
     isRecenteringPrimed: false,
     locationButton: null,
+    locationIconImage: null,
     northIndicator: null,
+    northIndicatorWrap: null,
     headingController: null,
     unsubscribeHeading: null,
     currentLocationMarker: null,
