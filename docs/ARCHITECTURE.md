@@ -122,3 +122,14 @@ PR8.5 keeps PR8.x structure and fixes the compass-follow sign/convention bug:
 - Fix: heading now maps directly to MapLibre bearing (`bearing = heading`, normalized), applied once through the existing absolute heading pipeline.
 - North indicator remains rotated opposite to map bearing so it still points to north on screen.
 
+## PR8.6 smooth camera UX and manual-pan compass exit
+
+PR8.6 keeps PR8.x map/heading structure and focuses on camera feel and mode behaviour:
+
+- Replaced remaining user-visible `jumpTo` usage in compass/recenter flows with `easeTo` camera transitions.
+- Entering compass-follow now animates into lower-third positioning instead of snapping.
+- Heading updates in compass-follow now use short-duration eased bearing updates for smooth continuous rotation.
+- Added programmatic-vs-user move guarding; manual drag/zoom/touch/move start now exits compass-follow immediately.
+- On manual exit from compass-follow, current map rotation is preserved (no snap back to north-up).
+- Added inertia tuning in map init (`dragPan` inertia options) to improve mobile deceleration feel.
+

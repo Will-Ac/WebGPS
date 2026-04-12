@@ -86,3 +86,13 @@ Then open `http://localhost:8000`.
 5. Confirm north indicator still points north while map rotates.
 6. Confirm recenter flow, lower-third positioning, layers picker, markers, and overlays still work as before.
 
+## PR8.6 validation checklist
+
+1. Enter compass-follow and confirm user location animates smoothly into lower-third position (no snap).
+2. While compass-follow is active, rotate device and confirm bearing updates remain smooth and responsive.
+3. While compass-follow is active, manually pan/zoom/touch the map and confirm compass-follow exits immediately.
+4. After manual exit, confirm map keeps the current rotation (no snap to north-up).
+5. Confirm recenter and mode transitions are eased (no abrupt `jumpTo` camera snap).
+6. Confirm panning inertia/deceleration feels natural on mobile.
+7. Confirm layers picker, markers, line, and labels continue working.
+

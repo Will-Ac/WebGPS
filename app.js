@@ -7,6 +7,8 @@
   const LABEL_OFFSET_PIXELS = 16;
   const EARTH_RADIUS_METERS = 6371000;
   const COMPASS_DEBUG_LOGGING = true;
+  const CAMERA_EASE_STANDARD_MS = 650;
+  const CAMERA_EASE_HEADING_MS = 140;
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
     longitude: -2.5859117
@@ -81,7 +83,12 @@
       center: FALLBACK_CENTER,
       zoom: FALLBACK_ZOOM,
       maxZoom: MAX_MAP_ZOOM,
-      attributionControl: false
+      attributionControl: false,
+      dragPan: {
+        inertia: true,
+        inertiaDeceleration: 2000,
+        inertiaMaxSpeed: 1400
+      }
     });
 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
@@ -255,16 +262,22 @@
       zoom: map.getZoom(),
       bearing: typeof options?.bearing === 'number' ? options.bearing : map.getBearing(),
       offset: [0, offsetY],
-      animate: false,
+      animate: true,
+      duration: CAMERA_EASE_STANDARD_MS,
+      essential: true,
       ...options
     };
 
-    if (camera.animate) {
-      map.easeTo(camera);
-      return;
+    if (!camera.animate) {
+      camera.duration = 0;
     }
 
-    map.jumpTo(camera);
+    compassState.programmaticMoveDepth += 1;
+    const settleProgrammaticMove = () => {
+      compassState.programmaticMoveDepth = Math.max(0, compassState.programmaticMoveDepth - 1);
+    };
+    map.once('moveend', settleProgrammaticMove);
+    map.easeTo(camera);
   }
 
   function headingToMapBearing(headingDegrees) {
@@ -307,7 +320,11 @@
       activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
     });
 
-    setMapCameraToDevice(map, compassState, { animate: false, bearing: finalBearing });
+    setMapCameraToDevice(map, compassState, {
+      animate: true,
+      duration: CAMERA_EASE_HEADING_MS,
+      bearing: finalBearing
+    });
   }
 
   function updateNorthIndicatorRotation(compassState, headingDegrees) {
@@ -355,14 +372,20 @@
     compassState.isCompassFollowEnabled = true;
     compassState.lastAppliedMapBearing = null;
     button.classList.add('is-compass-follow');
-    setMapCameraToDevice(map, compassState, { animate: false, bearing: map.getBearing() });
+    setMapCameraToDevice(map, compassState, {
+      animate: true,
+      duration: CAMERA_EASE_STANDARD_MS,
+      bearing: map.getBearing()
+    });
     debugCompassLog('compass-follow enabled', {
       activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
     });
     setStatusMessage('Compass-follow starting…');
   }
 
-  function disableCompassFollow(map, compassState) {
+  function disableCompassFollow(map, compassState, options) {
+    const shouldKeepCurrentBearing = !!options?.keepCurrentBearing;
+
     if (compassState.headingController) {
       compassState.headingController.stop();
     }
@@ -374,9 +397,15 @@
       compassState.locationButton.classList.remove('is-compass-follow');
     }
 
-    map.setBearing(0);
-    updateNorthIndicatorRotation(compassState, 0);
-    debugCompassLog('compass-follow disabled');
+    if (!shouldKeepCurrentBearing) {
+      map.setBearing(0);
+      updateNorthIndicatorRotation(compassState, 0);
+    } else {
+      updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+    }
+    debugCompassLog('compass-follow disabled', {
+      keepCurrentBearing: shouldKeepCurrentBearing
+    });
   }
 
   function createControlsRoot() {
@@ -465,8 +494,12 @@
       }
 
       if (compassState.isCompassFollowEnabled) {
-        disableCompassFollow(map, compassState);
-        setMapCameraToDevice(map, compassState, { animate: false, bearing: 0 });
+        disableCompassFollow(map, compassState, { keepCurrentBearing: false });
+        setMapCameraToDevice(map, compassState, {
+          animate: true,
+          duration: CAMERA_EASE_STANDARD_MS,
+          bearing: 0
+        });
         return;
       }
 
@@ -544,6 +577,37 @@
     map.on('dragstart zoomstart', () => {
       compassState.isRecenteringPrimed = false;
     });
+
+    const handleUserCameraGesture = (eventName) => {
+      if (!compassState.isCompassFollowEnabled) {
+        return;
+      }
+      if (compassState.programmaticMoveDepth > 0) {
+        return;
+      }
+      debugCompassLog('user gesture detected, exiting compass-follow', { eventName });
+      disableCompassFollow(map, compassState, { keepCurrentBearing: true });
+      setStatusMessage('Compass-follow paused: manual map control.');
+    };
+
+    map.on('dragstart', () => {
+      handleUserCameraGesture('dragstart');
+    });
+    map.on('zoomstart', () => {
+      handleUserCameraGesture('zoomstart');
+    });
+    map.on('movestart', (event) => {
+      if (event && event.originalEvent) {
+        handleUserCameraGesture('movestart');
+      }
+    });
+    map.getCanvas().addEventListener(
+      'touchstart',
+      () => {
+        handleUserCameraGesture('touchstart');
+      },
+      { passive: true }
+    );
   }
 
   function ensureLineLayer(map, overlayState) {
@@ -641,10 +705,24 @@
       updateDeviceToAircraftOverlay(map, latitude, longitude, overlayState);
 
       if (!hasPosition) {
-        map.jumpTo({ center: [longitude, latitude], zoom: FOCUS_ZOOM });
+        compassState.programmaticMoveDepth += 1;
+        map.once('moveend', () => {
+          compassState.programmaticMoveDepth = Math.max(0, compassState.programmaticMoveDepth - 1);
+        });
+        map.easeTo({
+          center: [longitude, latitude],
+          zoom: FOCUS_ZOOM,
+          bearing: map.getBearing(),
+          duration: CAMERA_EASE_STANDARD_MS,
+          essential: true
+        });
         setStatusMessage('Showing your current device position.');
       } else if (compassState.isCompassFollowEnabled) {
-        setMapCameraToDevice(map, compassState, { animate: false, bearing: map.getBearing() });
+        setMapCameraToDevice(map, compassState, {
+          animate: true,
+          duration: CAMERA_EASE_HEADING_MS,
+          bearing: map.getBearing()
+        });
       }
     };
 
@@ -706,7 +784,8 @@
     currentLocationMarker: null,
     watchPositionId: null,
     activeHeadingSubscriptions: 0,
-    lastAppliedMapBearing: null
+    lastAppliedMapBearing: null,
+    programmaticMoveDepth: 0
   };
 
   ensureLineLayer(map, overlayState);
