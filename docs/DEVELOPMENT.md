@@ -37,3 +37,102 @@ Then open `http://localhost:8000`.
 23. Confirm a metric map scale appears at the bottom-left.
 24. Confirm Streets and Satellite both zoom in to level 19 without Satellite stopping earlier than Streets.
 25. Confirm browser console has no runtime errors during these flows.
+
+## PR8 validation checklist
+
+1. Load the app and confirm MapLibre renders in the existing `#map` container.
+2. Confirm there is no active DOM pane rotation path (`transform: rotate(...)` on Leaflet map panes is no longer used).
+3. Accept location permission and confirm current location marker appears and map focuses the device.
+4. Confirm mock aircraft marker appears at `51.4733071, -2.5859117`.
+5. Confirm dotted line between device and aircraft renders and updates while moving/panning/zooming/rotating.
+6. Confirm distance and bearing labels stay on opposite sides of the line with semi-transparent white pill backgrounds.
+7. Confirm layers button opens temporary chooser with Streets/Satellite/Terrain and chooser dismisses after selection.
+8. Confirm first location-button tap recenters device without entering compass-follow.
+9. Confirm second location-button tap attempts compass-follow using PR7 heading module and rotates map via native bearing updates.
+10. If heading permission is denied/unavailable/no data, confirm compass-follow exits gracefully and does not stay visually active.
+11. In compass-follow mode, confirm device stays lower-center (about one-third up from bottom) while heading/location updates continue.
+12. Confirm touch pan/zoom/rotate interaction remains smooth on iPhone/iPad Safari.
+13. Confirm scale remains visible at bottom-left.
+14. Confirm browser console has no runtime errors during these flows.
+
+## PR8.2 validation checklist
+
+1. Enter compass-follow and rotate device about 90°; verify map rotates about 90° (not ~180°).
+2. Rotate device through a full 360°; verify map completes one 360° rotation cycle (not ~720°).
+3. Repeat compass-follow enter/exit several times; verify rotation stays 1:1 and does not worsen.
+4. Confirm only one active heading subscription is reported in compass debug logs.
+5. Confirm debug logs show one heading-to-bearing conversion path (`apply heading -> bearing`) with absolute bearing values.
+6. Confirm first-tap recenter, second-tap compass-follow behaviour remains intact.
+7. Confirm lower-third compass placement remains intact during heading and location updates.
+8. Confirm layers picker, markers, dotted line, and distance/bearing labels continue working.
+9. Confirm no console runtime errors.
+
+## PR8.3 validation checklist
+
+1. In compass-follow, rotate heading across north (for example 350° -> 10°) and confirm no extra near-360° jump occurs.
+2. Rotate device about 90° and confirm map rotates about 90°.
+3. Rotate device through a full 360° and confirm map completes one 360° cycle.
+4. Toggle compass-follow on/off repeatedly and confirm no duplicated heading behaviour appears.
+5. Confirm heading logs show browser event source -> extracted heading -> normalized heading -> final target/final applied bearing.
+6. Confirm no secondary heading source takes over once a higher-priority source is selected unless required.
+7. Confirm lower-third placement, layers picker, markers, overlays, and north indicator still behave as before.
+
+## PR8.5 validation checklist
+
+1. Enter compass-follow and rotate device clockwise about 90°; confirm map rotates clockwise about 90°.
+2. Rotate device one full clockwise 360°; confirm map performs one full cycle (no apparent 2x motion).
+3. Confirm debug logs show heading input and target/final MapLibre bearing with matching sign convention.
+4. Confirm compass mode enter/exit logs and active heading subscription count remain stable across repeated toggles.
+5. Confirm north indicator still points north while map rotates.
+6. Confirm recenter flow, lower-third positioning, layers picker, markers, and overlays still work as before.
+
+## PR8.6 validation checklist
+
+1. Enter compass-follow and confirm user location animates smoothly into lower-third position (no snap).
+2. While compass-follow is active, rotate device and confirm bearing updates remain smooth and responsive.
+3. While compass-follow is active, manually pan/zoom/touch the map and confirm compass-follow exits immediately.
+4. After manual exit, confirm map keeps the current rotation (no snap to north-up).
+5. Confirm recenter and mode transitions are eased (no abrupt `jumpTo` camera snap).
+6. Confirm panning inertia/deceleration feels natural on mobile.
+7. Confirm layers picker, markers, line, and labels continue working.
+
+## PR8.7 validation checklist
+
+1. Confirm scale control now shows zoom readout text (e.g. `| Z: 17.3`) beside distance scale.
+2. Confirm zoom readout updates continuously during pinch-zoom and button zoom.
+3. Enter compass-follow and confirm rotation is smoother (less jitter) while still responsive.
+4. Confirm heading wrap around north remains stable (no sudden long-turn jump).
+5. Confirm tiny heading noise does not cause visible bearing twitch.
+6. Confirm only one compass rotation animation loop runs and it stops when compass-follow exits.
+7. Confirm existing compass mode entry/exit, lower-third framing, pan-to-exit, markers, and overlays still work.
+
+## PR8.8 validation checklist
+
+1. Confirm the blue dashed device-to-aircraft line is visible and thicker than previous implementation.
+2. Confirm a direction arrow is shown on the aircraft side of the pill and points toward aircraft direction.
+3. Confirm distance/bearing appears in one two-line pill (distance first line, bearing second line).
+4. Confirm distance formatting: metres below 1000 m, kilometres with two decimals at/above 1000 m.
+5. Confirm pill text stays upright during map rotation.
+6. Confirm pill remains centered on the visible line segment when line is on screen.
+7. Pan so line is off screen and confirm pill detaches to nearest relevant screen edge and remains readable.
+8. Confirm overlay updates correctly during pan/zoom/rotate/compass-follow and style switching.
+
+## PR8.9 validation checklist
+
+1. Confirm max zoom stops at 18.5.
+2. Confirm current device marker no longer opens/displays the old "Current device position" popup label.
+3. Confirm dashed blue line remains visible after switching between Streets/Satellite/Terrain.
+4. Confirm line redraw persists without requiring fresh geolocation after style switch.
+5. Confirm pill follows pan/zoom/rotation in sync with no visible lag.
+6. Confirm arrow is visible whenever overlay is visible and stays on aircraft side of the pill.
+7. Confirm pill text remains centered and readable with updated opacity/size.
+
+## PR8.10 validation checklist
+
+1. Confirm max zoom caps at 18.4.
+2. Confirm no default popup/label appears for current device marker.
+3. Switch Streets -> Satellite -> Terrain -> Streets repeatedly; confirm dashed device→aircraft line remains visible every time.
+4. Confirm line redraw happens immediately after style switch (no wait for next location update).
+5. Confirm arrow sits on dashed line near the pill by default and points toward aircraft.
+6. Confirm overlay pill/arrow stay visually synced during pan/zoom/rotate.
+

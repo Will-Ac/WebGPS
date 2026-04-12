@@ -79,3 +79,103 @@ PR7.1 keeps the PR7 heading module intact and updates map behaviour for navigati
 - Previous compass mode centered the user in the middle of the screen; PR7.1 now anchors compass-follow to a lower-third focus point (horizontally centered, about one-third up from bottom) so more map area is visible ahead.
 - Current location handling now maintains a single persistent marker and updates it from geolocation watch updates rather than adding duplicate markers.
 - Tile layers now use increased surrounding tile retention (`keepBuffer`) consistently across Streets/Satellite/Terrain to reduce grey gaps during rotation and improve nearby panning responsiveness.
+
+## PR8 map engine migration to MapLibre GL JS
+
+PR8 replaces Leaflet in the main runtime path with MapLibre GL JS so compass-follow uses native map bearing instead of rotating Leaflet DOM panes:
+
+- Previous Leaflet compass-follow rotated `mapPane` with CSS transforms; PR8 removes that active path and applies heading with MapLibre camera bearing.
+- The PR7 heading module remains the source of normalized heading data and now drives `map.setBearing`/camera bearing updates.
+- The two-step location button flow is preserved (first tap recenter, second tap compass-follow), including graceful failure when heading is unavailable.
+- Lower-third navigation framing is preserved in compass-follow by using native camera offset rather than CSS transform-origin hacks.
+- Layer switching keeps the existing three user-facing choices (Streets, Satellite, Terrain) and now swaps MapLibre styles via the existing custom layers picker UI.
+- Device marker, mock aircraft marker, dotted connection line, and distance/bearing labels remain, with line rendering moved to a MapLibre GeoJSON line layer and labels kept as synchronized HTML overlays.
+- Scale display remains available at bottom-left using MapLibre’s scale control.
+
+## PR8.2 compass-follow double-rotation fix
+
+PR8.2 keeps the PR8 MapLibre migration intact and fixes compass-follow over-rotation by enforcing a single heading-to-bearing pipeline:
+
+- Root cause: heading-to-bearing camera updates were triggered from multiple camera update paths, so heading influence could be re-applied while recenter/position updates were also driving compass camera changes.
+- Fix: heading conversion and bearing application now happen in exactly one dedicated path (`applyCompassBearingFromHeading`).
+- Map bearing is now set as an absolute value derived once from normalized heading (`bearing = -heading` in map convention), not as repeated implicit reapplication.
+- Camera recenter updates while in compass mode now preserve the current map bearing instead of recomputing/reapplying heading transforms.
+- Added concise compass debug logs for heading input, final map bearing output, subscription count, and compass mode transitions.
+
+## PR8.3 compass-follow 1:1 rotation fix
+
+PR8.3 keeps PR8/PR8.2 structure but fixes the remaining over-rotation when heading wraps through north:
+
+- Exact heading path is now documented as: browser orientation event -> `extractHeadingCandidate` in `js/heading.js` -> normalized heading subscriber payload -> `applyCompassBearingFromHeading` in `app.js` -> MapLibre camera bearing update.
+- Root cause: heading values were normalized in `[0, 360)` and then converted to bearing directly, which caused a discontinuity near north crossing (for example `359 -> 0`) so camera bearing could take an extra near-full-turn jump.
+- Fix: `app.js` now resolves each new target bearing to the nearest equivalent around the current bearing before applying it, preventing wraparound over-rotation while keeping absolute heading-follow.
+- `js/heading.js` now ignores lower/equal-priority alternate sources once a source is selected, preventing parallel event streams from fighting each other.
+- Additional concise debug logs now show raw event type/source values, extracted heading, normalized heading updates, final target bearing, and final bearing sent to MapLibre.
+
+## PR8.5 MapLibre bearing sign convention fix
+
+PR8.5 keeps PR8.x structure and fixes the compass-follow sign/convention bug:
+
+- The heading module already emits compass-style heading (`0..360`, clockwise from north).
+- Previous PR8.x code inverted heading sign before applying to MapLibre bearing.
+- Root cause: that sign inversion made map rotation direction oppose heading convention and caused apparent doubled relative rotation with phone movement.
+- Fix: heading now maps directly to MapLibre bearing (`bearing = heading`, normalized), applied once through the existing absolute heading pipeline.
+- North indicator remains rotated opposite to map bearing so it still points to north on screen.
+
+## PR8.6 smooth camera UX and manual-pan compass exit
+
+PR8.6 keeps PR8.x map/heading structure and focuses on camera feel and mode behaviour:
+
+- Replaced remaining user-visible `jumpTo` usage in compass/recenter flows with `easeTo` camera transitions.
+- Entering compass-follow now animates into lower-third positioning instead of snapping.
+- Heading updates in compass-follow now use short-duration eased bearing updates for smooth continuous rotation.
+- Added programmatic-vs-user move guarding; manual drag/zoom/touch/move start now exits compass-follow immediately.
+- On manual exit from compass-follow, current map rotation is preserved (no snap back to north-up).
+- Added inertia tuning in map init (`dragPan` inertia options) to improve mobile deceleration feel.
+
+## PR8.7 zoom readout and damped compass rotation
+
+PR8.7 keeps PR8.x architecture and adds two UX-focused improvements:
+
+- Bottom scale now includes a live zoom readout (`Z: n.n`) appended directly to the existing scale control.
+- Compass-follow rotation now uses damped heading smoothing:
+  - raw heading becomes `targetHeading`
+  - `smoothedHeading` moves toward target each animation frame using exponential smoothing
+  - shortest-angle interpolation handles 0/360 wrap correctly
+  - tiny heading deltas are ignored to reduce sensor jitter
+- Bearing is applied with lightweight `map.setBearing(...)` in a single animation loop while compass-follow is active.
+- Loop lifecycle is explicit: starts when compass-follow starts, stops on exit, and avoids duplicate loops.
+
+## PR8.8 line/arrow/pill overlay refresh
+
+PR8.8 keeps PR8.x mapping/heading structure and refreshes only the device-to-aircraft overlay system:
+
+- Restores the device-to-aircraft line as a thicker blue dashed MapLibre line layer for better readability.
+- Adds a directional arrow overlay along the line that points toward the aircraft side.
+- Replaces split distance/bearing labels with one adaptive two-line pill (`distance` on first line, `bearing` on second line).
+- Pill stays upright on screen (no line-angle text rotation).
+- Pill position now adapts using screen-space visibility logic:
+  - centered on visible line segment when visible
+  - detached fallback near relevant screen edge when line segment is off screen.
+- Overlay update path is now one coherent pipeline for line + arrow + pill during pan/zoom/rotate/compass-follow/style changes.
+
+## PR8.9 overlay sync, arrow visibility, style-switch redraw, and zoom cap
+
+PR8.9 keeps PR8.x architecture and applies targeted overlay reliability fixes:
+
+- Maximum map zoom is capped at `18.5`.
+- Device marker popup/label is removed (marker remains, no default popup label).
+- Pill/arrow screen positioning now uses `translate3d(...)` transforms and updates on map `render` to remove visible lag during pan/zoom/rotate.
+- Arrow visibility and separation are enforced with viewport clamping and minimum offset from the pill.
+- Line source data is cached in app state and reapplied on style reload so dashed line survives Streets/Satellite/Terrain switches.
+- Pill text alignment/size and opacity were tuned for readability while keeping the same compact overlay style.
+
+## PR8.10 line/style lifecycle and overlay sync fixes
+
+PR8.10 applies focused reliability fixes on top of PR8.9:
+
+- Max zoom is reduced from `18.5` to `18.4`.
+- Device marker popup label is removed.
+- Device→aircraft line recreation now depends on current style lifecycle (source/layer recreated and repopulated on each style load using cached latest GeoJSON).
+- Overlay pill/arrow remain frame-synced via render updates, and arrow default placement is now on-line near the pill with a fixed forward offset toward aircraft.
+
