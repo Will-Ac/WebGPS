@@ -127,3 +127,12 @@ Then open `http://localhost:8000`.
 6. Confirm arrow is visible whenever overlay is visible and stays on aircraft side of the pill.
 7. Confirm pill text remains centered and readable with updated opacity/size.
 
+## PR8.10 validation checklist
+
+1. Confirm max zoom caps at 18.4.
+2. Confirm no default popup/label appears for current device marker.
+3. Switch Streets -> Satellite -> Terrain -> Streets repeatedly; confirm dashed device→aircraft line remains visible every time.
+4. Confirm line redraw happens immediately after style switch (no wait for next location update).
+5. Confirm arrow sits on dashed line near the pill by default and points toward aircraft.
+6. Confirm overlay pill/arrow stay visually synced during pan/zoom/rotate.
+

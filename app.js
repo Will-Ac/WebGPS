@@ -2,7 +2,9 @@
   const FALLBACK_CENTER = [-98.5795, 39.8283];
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
-  const MAX_MAP_ZOOM = 18.5;
+  const MAX_MAP_ZOOM = 18.4;
+  const DEVICE_AIRCRAFT_LINE_SOURCE_ID = 'device-aircraft-line';
+  const DEVICE_AIRCRAFT_LINE_LAYER_ID = 'device-aircraft-line-layer';
   const COMPASS_ANCHOR_HEIGHT_RATIO = 2 / 3;
   const EARTH_RADIUS_METERS = 6371000;
   const COMPASS_DEBUG_LOGGING = true;
@@ -297,15 +299,24 @@
     let arrowAngle;
 
     if (clipped) {
+      const lineDirection = {
+        x: clipped.end.x - clipped.start.x,
+        y: clipped.end.y - clipped.start.y
+      };
+      const directionLength = Math.hypot(lineDirection.x, lineDirection.y) || 1;
+      const normalizedDirection = {
+        x: lineDirection.x / directionLength,
+        y: lineDirection.y / directionLength
+      };
       pillPoint = {
         x: clamp((clipped.start.x + clipped.end.x) / 2, inset, width - inset),
         y: clamp((clipped.start.y + clipped.end.y) / 2, inset, height - inset)
       };
       arrowPoint = {
-        x: clamp(pillPoint.x + (aircraftPoint.x - pillPoint.x) * 0.6, inset, width - inset),
-        y: clamp(pillPoint.y + (aircraftPoint.y - pillPoint.y) * 0.6, inset, height - inset)
+        x: clamp(pillPoint.x + normalizedDirection.x * 28, inset, width - inset),
+        y: clamp(pillPoint.y + normalizedDirection.y * 28, inset, height - inset)
       };
-      arrowAngle = toDegrees(Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x));
+      arrowAngle = toDegrees(Math.atan2(normalizedDirection.y, normalizedDirection.x));
     } else {
       const center = { x: width / 2, y: height / 2 };
       const direction = {
@@ -758,44 +769,48 @@
     );
   }
 
+  function ensureLineLayerInCurrentStyle(map, overlayState) {
+    if (!map.getSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID)) {
+      map.addSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID, {
+        type: 'geojson',
+        data: overlayState.lineData || { type: 'FeatureCollection', features: [] }
+      });
+    }
+
+    if (!map.getLayer(DEVICE_AIRCRAFT_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: DEVICE_AIRCRAFT_LINE_LAYER_ID,
+        type: 'line',
+        source: DEVICE_AIRCRAFT_LINE_SOURCE_ID,
+        paint: {
+          'line-color': '#1d4ed8',
+          'line-width': 4,
+          'line-dasharray': [2.5, 2],
+          'line-opacity': 0.95
+        }
+      });
+    }
+
+    const source = map.getSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID);
+    if (source && overlayState.lineData) {
+      source.setData(overlayState.lineData);
+    }
+  }
+
   function ensureLineLayer(map, overlayState) {
-    const sourceId = 'device-aircraft-line';
-    const layerId = 'device-aircraft-line-layer';
-
-    const createIfMissing = () => {
-      if (!map.getSource(sourceId)) {
-        map.addSource(sourceId, {
-          type: 'geojson',
-          data: overlayState.lineData || { type: 'FeatureCollection', features: [] }
-        });
-      }
-
-      if (!map.getLayer(layerId)) {
-        map.addLayer({
-          id: layerId,
-          type: 'line',
-          source: sourceId,
-          paint: {
-            'line-color': '#1d4ed8',
-            'line-width': 4,
-            'line-dasharray': [2.5, 2],
-            'line-opacity': 0.95
-          }
-        });
-      }
-
-      overlayState.lineSourceId = sourceId;
-      const source = map.getSource(sourceId);
-      if (source && overlayState.lineData) {
-        source.setData(overlayState.lineData);
-      }
+    const rebindLineForStyle = () => {
+      ensureLineLayerInCurrentStyle(map, overlayState);
+      overlayState.lineSourceId = DEVICE_AIRCRAFT_LINE_SOURCE_ID;
     };
 
     if (map.isStyleLoaded()) {
-      createIfMissing();
+      rebindLineForStyle();
     }
 
-    map.on('style.load', createIfMissing);
+    if (!overlayState.lineStyleListenerBound) {
+      map.on('style.load', rebindLineForStyle);
+      overlayState.lineStyleListenerBound = true;
+    }
   }
 
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
@@ -808,27 +823,24 @@
       longitude: deviceLng
     };
 
-    if (overlayState.lineSourceId) {
-      const source = map.getSource(overlayState.lineSourceId);
-      overlayState.lineData = {
-        type: 'FeatureCollection',
-        features: [
-          {
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: [
-                [deviceLng, deviceLat],
-                [aircraftLng, aircraftLat]
-              ]
-            },
-            properties: {}
-          }
-        ]
-      };
-      if (source) {
-        source.setData(overlayState.lineData);
-      }
+    overlayState.lineData = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [deviceLng, deviceLat],
+              [aircraftLng, aircraftLat]
+            ]
+          },
+          properties: {}
+        }
+      ]
+    };
+    if (map.isStyleLoaded()) {
+      ensureLineLayerInCurrentStyle(map, overlayState);
     }
 
     const distanceMeters = calculateDistanceMeters(deviceLat, deviceLng, aircraftLat, aircraftLng);
@@ -918,6 +930,7 @@
   const overlayState = {
     lineSourceId: null,
     lineData: null,
+    lineStyleListenerBound: false,
     infoPill: null,
     directionArrow: null,
     devicePosition: null,

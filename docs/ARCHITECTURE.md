@@ -170,3 +170,12 @@ PR8.9 keeps PR8.x architecture and applies targeted overlay reliability fixes:
 - Line source data is cached in app state and reapplied on style reload so dashed line survives Streets/Satellite/Terrain switches.
 - Pill text alignment/size and opacity were tuned for readability while keeping the same compact overlay style.
 
+## PR8.10 line/style lifecycle and overlay sync fixes
+
+PR8.10 applies focused reliability fixes on top of PR8.9:
+
+- Max zoom is reduced from `18.5` to `18.4`.
+- Device marker popup label is removed.
+- Device→aircraft line recreation now depends on current style lifecycle (source/layer recreated and repopulated on each style load using cached latest GeoJSON).
+- Overlay pill/arrow remain frame-synced via render updates, and arrow default placement is now on-line near the pill with a fixed forward offset toward aircraft.
+
