@@ -1,16 +1,81 @@
 (function initTelemetryMapApp() {
-  const FALLBACK_CENTER = [39.8283, -98.5795];
+  const FALLBACK_CENTER = [-98.5795, 39.8283];
   const FALLBACK_ZOOM = 4;
   const FOCUS_ZOOM = 15;
-  const MAX_MAP_ZOOM = 19;
-  const TILE_KEEP_BUFFER = 8;
+  const MAX_MAP_ZOOM = 18.4;
+  const DEVICE_AIRCRAFT_LINE_SOURCE_ID = 'device-aircraft-line';
+  const DEVICE_AIRCRAFT_LINE_LAYER_ID = 'device-aircraft-line-layer';
   const COMPASS_ANCHOR_HEIGHT_RATIO = 2 / 3;
-  const LABEL_OFFSET_PIXELS = 16;
+  const EARTH_RADIUS_METERS = 6371000;
+  const COMPASS_DEBUG_LOGGING = true;
+  const CAMERA_EASE_STANDARD_MS = 650;
+  const CAMERA_EASE_HEADING_MS = 140;
+  const ROTATION_DAMPING_FACTOR = 0.16;
+  const ROTATION_NOISE_THRESHOLD_DEGREES = 0.5;
+  const CONTROL_ICON_PATHS = {
+    NORTH: 'assets/icons/NORTH.svg',
+    COMPASS: 'assets/icons/COMPASS.svg',
+    LAYERS: 'assets/icons/LAYERS.svg',
+    LOCATION: 'assets/icons/LOCATION.svg'
+  };
   const MOCK_DRONE_POSITION = {
     latitude: 51.4733071,
     longitude: -2.5859117
   };
-  const EARTH_RADIUS_METERS = 6371000;
+
+  const MAP_STYLES = {
+    Streets: {
+      version: 8,
+      sources: {
+        osm: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '© OpenStreetMap contributors'
+        }
+      },
+      layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+    },
+    Satellite: {
+      version: 8,
+      sources: {
+        esri: {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          ],
+          tileSize: 256,
+          attribution: 'Tiles © Esri'
+        }
+      },
+      layers: [{ id: 'esri', type: 'raster', source: 'esri' }]
+    },
+    Terrain: {
+      version: 8,
+      sources: {
+        opentopo: {
+          type: 'raster',
+          tiles: ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '© OpenStreetMap contributors, SRTM | © OpenTopoMap'
+        }
+      },
+      layers: [{ id: 'opentopo', type: 'raster', source: 'opentopo' }]
+    }
+  };
+
+  function debugCompassLog(message, details) {
+    if (!COMPASS_DEBUG_LOGGING) {
+      return;
+    }
+
+    if (typeof details === 'undefined') {
+      console.log('[compass-map]', message);
+      return;
+    }
+
+    console.log('[compass-map]', message, details);
+  }
 
   function setStatusMessage(message) {
     const statusEl = document.getElementById('status-message');
@@ -21,73 +86,84 @@
   }
 
   function createMap() {
-    const map = L.map('map', {
-      zoomControl: false,
-      maxZoom: MAX_MAP_ZOOM
-    }).setView(FALLBACK_CENTER, FALLBACK_ZOOM);
-
-    const tileLayerOptions = {
-      keepBuffer: TILE_KEEP_BUFFER,
-      updateWhenZooming: true
-    };
-
-    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: MAP_STYLES.Streets,
+      center: FALLBACK_CENTER,
+      zoom: FALLBACK_ZOOM,
       maxZoom: MAX_MAP_ZOOM,
-      attribution: '&copy; OpenStreetMap contributors',
-      ...tileLayerOptions
+      doubleClickZoom: false,
+      attributionControl: false,
+      dragPan: {
+        inertia: true,
+        inertiaDeceleration: 2000,
+        inertiaMaxSpeed: 1400
+      }
     });
 
-    const satelliteLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        maxZoom: MAX_MAP_ZOOM,
-        attribution: 'Tiles &copy; Esri',
-        ...tileLayerOptions
-      }
-    );
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+    attachZoomReadoutToScale(map);
 
-    const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      maxZoom: 17,
-      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
-      ...tileLayerOptions
-    });
-
-    streetLayer.addTo(map);
-
-    L.control.zoom({ position: 'topright' }).addTo(map);
-    L.control.scale({ position: 'bottomleft', metric: true, imperial: false }).addTo(map);
-
-    return {
-      map,
-      baseLayers: {
-        Streets: streetLayer,
-        Satellite: satelliteLayer,
-        Terrain: terrainLayer
-      }
-    };
+    return { map, styleNames: Object.keys(MAP_STYLES) };
   }
 
-  function upsertCurrentLocationMarker(map, compassState, lat, lng) {
+  function attachZoomReadoutToScale(map) {
+    const ensureZoomReadoutElement = () => {
+      const scaleElement = map.getContainer().querySelector('.maplibregl-ctrl-scale');
+      if (!scaleElement) {
+        return null;
+      }
+
+      let zoomReadout = scaleElement.querySelector('.gm-zoom-readout');
+      if (!zoomReadout) {
+        zoomReadout = document.createElement('span');
+        zoomReadout.className = 'gm-zoom-readout';
+        scaleElement.appendChild(zoomReadout);
+      }
+      return zoomReadout;
+    };
+
+    const updateZoomReadout = () => {
+      const zoomReadout = ensureZoomReadoutElement();
+      if (!zoomReadout) {
+        return;
+      }
+      zoomReadout.textContent = ` | Z: ${map.getZoom().toFixed(1)}`;
+    };
+
+    map.on('load', updateZoomReadout);
+    map.on('zoom', updateZoomReadout);
+    map.on('move', updateZoomReadout);
+    map.on('styledata', updateZoomReadout);
+  }
+
+  function createMarkerElement(className) {
+    const el = document.createElement('div');
+    el.className = className;
+    return el;
+  }
+
+  function upsertCurrentLocationMarker(compassState, lat, lng) {
     if (!compassState.currentLocationMarker) {
-      const marker = L.marker([lat, lng]).addTo(map);
-      marker.bindPopup('Current device position').openPopup();
-      compassState.currentLocationMarker = marker;
+      compassState.currentLocationMarker = new maplibregl.Marker({
+        element: createMarkerElement('gm-marker gm-marker-device')
+      })
+        .setLngLat([lng, lat])
+        .addTo(compassState.map);
       return;
     }
 
-    compassState.currentLocationMarker.setLatLng([lat, lng]);
+    compassState.currentLocationMarker.setLngLat([lng, lat]);
   }
 
   function placeMockDroneMarker(map) {
-    const marker = L.circleMarker([MOCK_DRONE_POSITION.latitude, MOCK_DRONE_POSITION.longitude], {
-      radius: 8,
-      color: '#c62828',
-      fillColor: '#e53935',
-      fillOpacity: 0.95,
-      weight: 2
-    }).addTo(map);
-    marker.bindPopup('Mock drone position');
-    return marker;
+    return new maplibregl.Marker({
+      element: createMarkerElement('gm-marker gm-marker-aircraft')
+    })
+      .setLngLat([MOCK_DRONE_POSITION.longitude, MOCK_DRONE_POSITION.latitude])
+      .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Mock drone position'))
+      .addTo(map);
   }
 
   function toRadians(degrees) {
@@ -126,227 +202,240 @@
     return normalizeBearing(bearing);
   }
 
-  function calculateMidpoint(fromLat, fromLng, toLat, toLng) {
-    return {
-      latitude: (fromLat + toLat) / 2,
-      longitude: (fromLng + toLng) / 2
-    };
+  function ensureOverlayElements(overlayState) {
+    if (overlayState.infoPill && overlayState.directionArrow) {
+      return;
+    }
+
+    overlayState.infoPill = document.createElement('div');
+    overlayState.infoPill.className = 'map-overlay-pill';
+    overlayState.infoPill.innerHTML =
+      '<div class="map-overlay-pill-distance"></div><div class="map-overlay-pill-bearing"></div>';
+
+    overlayState.directionArrow = document.createElement('div');
+    overlayState.directionArrow.className = 'map-overlay-direction-arrow';
+    overlayState.directionArrow.textContent = '➤';
+
+    overlayState.container.appendChild(overlayState.directionArrow);
+    overlayState.container.appendChild(overlayState.infoPill);
   }
 
-  function createOverlayLabel(lat, lng, className, text) {
-    return L.marker([lat, lng], {
-      interactive: false,
-      icon: L.divIcon({
-        className,
-        html: `<span class="overlay-label-text">${text}</span>`,
-        iconSize: null,
-        iconAnchor: [0, 0]
-      }),
-      zIndexOffset: 800,
-      keyboard: false
-    });
+  function formatDistance(distanceMeters) {
+    if (distanceMeters < 1000) {
+      return `${Math.round(distanceMeters)} m`;
+    }
+    return `${(distanceMeters / 1000).toFixed(2)} km`;
   }
 
-  function calculateLabelPosition(map, startLat, startLng, endLat, endLng, distancePixels) {
-    const startPoint = map.project([startLat, startLng]);
-    const endPoint = map.project([endLat, endLng]);
-    const midPoint = L.point(
-      (startPoint.x + endPoint.x) / 2,
-      (startPoint.y + endPoint.y) / 2
-    );
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function clipLineToViewport(startPoint, endPoint, width, height, padding) {
+    const minX = padding;
+    const minY = padding;
+    const maxX = width - padding;
+    const maxY = height - padding;
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const normalX = -dy / length;
-    const normalY = dx / length;
-    const aboveX = normalY < 0 ? normalX : -normalX;
-    const aboveY = normalY < 0 ? normalY : -normalY;
+    let t0 = 0;
+    let t1 = 1;
+
+    const p = [-dx, dx, -dy, dy];
+    const q = [
+      startPoint.x - minX,
+      maxX - startPoint.x,
+      startPoint.y - minY,
+      maxY - startPoint.y
+    ];
+
+    for (let i = 0; i < 4; i += 1) {
+      if (p[i] === 0) {
+        if (q[i] < 0) {
+          return null;
+        }
+      } else {
+        const r = q[i] / p[i];
+        if (p[i] < 0) {
+          if (r > t1) {
+            return null;
+          }
+          if (r > t0) {
+            t0 = r;
+          }
+        } else {
+          if (r < t0) {
+            return null;
+          }
+          if (r < t1) {
+            t1 = r;
+          }
+        }
+      }
+    }
 
     return {
-      above: map.unproject(
-        L.point(midPoint.x + aboveX * distancePixels, midPoint.y + aboveY * distancePixels)
-      ),
-      below: map.unproject(
-        L.point(midPoint.x - aboveX * distancePixels, midPoint.y - aboveY * distancePixels)
-      )
+      start: { x: startPoint.x + t0 * dx, y: startPoint.y + t0 * dy },
+      end: { x: startPoint.x + t1 * dx, y: startPoint.y + t1 * dy }
     };
   }
 
-  function calculateLineAngleDegrees(map, startLat, startLng, endLat, endLng) {
-    const startPoint = map.project([startLat, startLng]);
-    const endPoint = map.project([endLat, endLng]);
-    return toDegrees(Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x));
+  function setOverlayElementPosition(element, point) {
+    element.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%)`;
   }
 
-  function applyLabelAngle(labelMarker, angleDegrees) {
-    if (!labelMarker) {
+  function positionOverlayElements(map, overlayState) {
+    if (!overlayState.devicePosition || !overlayState.infoPill || !overlayState.directionArrow) {
       return;
     }
 
-    const element = labelMarker.getElement();
-    if (!element) {
-      return;
-    }
+    const viewport = map.getContainer().getBoundingClientRect();
+    const width = viewport.width;
+    const height = viewport.height;
+    const inset = 20;
 
-    const textEl = element.querySelector('.overlay-label-text');
-    if (!textEl) {
-      return;
-    }
+    const devicePoint = map.project([
+      overlayState.devicePosition.longitude,
+      overlayState.devicePosition.latitude
+    ]);
+    const aircraftPoint = map.project([MOCK_DRONE_POSITION.longitude, MOCK_DRONE_POSITION.latitude]);
+    const clipped = clipLineToViewport(devicePoint, aircraftPoint, width, height, inset);
 
-    textEl.style.transform = `rotate(${angleDegrees}deg)`;
-  }
+    let pillPoint;
+    let arrowPoint;
+    let arrowAngle;
+    const pillRect = overlayState.infoPill.getBoundingClientRect();
+    const arrowRect = overlayState.directionArrow.getBoundingClientRect();
+    const pillRadiusPixels = Math.hypot(pillRect.width / 2, pillRect.height / 2);
+    const arrowRadiusPixels = Math.max(arrowRect.width, arrowRect.height) / 2;
+    const arrowOffsetPixels = pillRadiusPixels + arrowRadiusPixels + 8;
 
-  function positionOverlayLabels(map, overlayState) {
-    if (!overlayState.devicePosition || !overlayState.distanceLabel || !overlayState.bearingLabel) {
-      return;
-    }
-
-    const aircraftLat = MOCK_DRONE_POSITION.latitude;
-    const aircraftLng = MOCK_DRONE_POSITION.longitude;
-    const startLat = overlayState.devicePosition.latitude;
-    const startLng = overlayState.devicePosition.longitude;
-    const labelPositions = calculateLabelPosition(
-      map,
-      startLat,
-      startLng,
-      aircraftLat,
-      aircraftLng,
-      LABEL_OFFSET_PIXELS
-    );
-    const lineAngleDegrees = calculateLineAngleDegrees(
-      map,
-      startLat,
-      startLng,
-      aircraftLat,
-      aircraftLng
-    );
-
-    overlayState.distanceLabel.setLatLng(labelPositions.above);
-    overlayState.bearingLabel.setLatLng(labelPositions.below);
-    applyLabelAngle(overlayState.distanceLabel, lineAngleDegrees);
-    applyLabelAngle(overlayState.bearingLabel, lineAngleDegrees);
-  }
-
-  function createLayersButtonControl(map, baseLayers) {
-    const LayersControl = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd() {
-        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-control-stack');
-        const button = L.DomUtil.create('button', 'gm-ios-control-button', container);
-        button.type = 'button';
-        button.setAttribute('aria-label', 'Map layers');
-        button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-layers" aria-hidden="true"></span>';
-
-        const chooser = L.DomUtil.create('div', 'gm-ios-layers-chooser', container);
-        chooser.hidden = true;
-
-        const closeChooser = () => {
-          chooser.hidden = true;
-        };
-
-        const openChooser = () => {
-          chooser.hidden = false;
-        };
-
-        Object.entries(baseLayers).forEach(([label, layer]) => {
-          const optionButton = L.DomUtil.create('button', 'gm-ios-layers-option', chooser);
-          optionButton.type = 'button';
-          optionButton.textContent = label;
-          optionButton.setAttribute('aria-label', `Set map type to ${label}`);
-          L.DomEvent.on(optionButton, 'click', (event) => {
-            L.DomEvent.stop(event);
-            Object.values(baseLayers).forEach((candidateLayer) => {
-              if (map.hasLayer(candidateLayer)) {
-                map.removeLayer(candidateLayer);
-              }
-            });
-            layer.addTo(map);
-            closeChooser();
-          });
-        });
-
-        L.DomEvent.disableClickPropagation(container);
-        L.DomEvent.on(button, 'click', (event) => {
-          L.DomEvent.stop(event);
-          if (chooser.hidden) {
-            openChooser();
-          } else {
-            closeChooser();
-          }
-        });
-
-        map.on('click', closeChooser);
-        document.addEventListener('pointerdown', (event) => {
-          if (!container.contains(event.target)) {
-            closeChooser();
-          }
-        });
-        return container;
-      }
-    });
-
-    return new LayersControl().addTo(map);
-  }
-
-  function createNorthIndicatorControl(map, compassState) {
-    const NorthIndicatorControl = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd() {
-        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-north-indicator-wrap');
-        const indicator = L.DomUtil.create('div', 'gm-ios-north-indicator', container);
-        indicator.innerHTML = '<span class="gm-ios-icon gm-ios-icon-north" aria-hidden="true"></span>';
-        indicator.setAttribute('aria-label', 'North indicator');
-        compassState.northIndicator = indicator;
-        return container;
-      }
-    });
-
-    return new NorthIndicatorControl().addTo(map);
-  }
-
-  function getCompassAnchorPoint(map) {
-    const mapSize = map.getSize();
-    return L.point(mapSize.x / 2, mapSize.y * COMPASS_ANCHOR_HEIGHT_RATIO);
-  }
-
-  function focusDeviceInCompassView(map, compassState) {
-    if (!compassState.devicePosition || compassState.isApplyingCompassView) {
-      return;
-    }
-
-    compassState.isApplyingCompassView = true;
-    try {
-      const deviceLatLng = [compassState.devicePosition.latitude, compassState.devicePosition.longitude];
-      map.setView(deviceLatLng, map.getZoom(), { animate: false });
-      const currentPoint = map.latLngToContainerPoint(deviceLatLng);
-      const targetPoint = getCompassAnchorPoint(map);
-      const panOffset = currentPoint.subtract(targetPoint);
-      map.panBy([panOffset.x, panOffset.y], { animate: false });
-    } finally {
-      compassState.isApplyingCompassView = false;
-    }
-  }
-
-  function applyMapRotation(map, rotationDegrees, pivotPosition) {
-    const pane = map.getPane('mapPane');
-    if (!pane) {
-      return;
-    }
-
-    const transformWithoutRotation = (pane.style.transform || '')
-      .replace(/ ?rotate\([^)]*\)/g, '')
-      .trim();
-
-    if (pivotPosition) {
-      const pivotPoint = map.latLngToContainerPoint([pivotPosition.latitude, pivotPosition.longitude]);
-      pane.style.transformOrigin = `${pivotPoint.x}px ${pivotPoint.y}px`;
+    if (clipped) {
+      const lineDirection = {
+        x: clipped.end.x - clipped.start.x,
+        y: clipped.end.y - clipped.start.y
+      };
+      const directionLength = Math.hypot(lineDirection.x, lineDirection.y) || 1;
+      const normalizedDirection = {
+        x: lineDirection.x / directionLength,
+        y: lineDirection.y / directionLength
+      };
+      pillPoint = {
+        x: clamp((clipped.start.x + clipped.end.x) / 2, inset, width - inset),
+        y: clamp((clipped.start.y + clipped.end.y) / 2, inset, height - inset)
+      };
+      arrowPoint = {
+        x: clamp(pillPoint.x + normalizedDirection.x * arrowOffsetPixels, inset, width - inset),
+        y: clamp(pillPoint.y + normalizedDirection.y * arrowOffsetPixels, inset, height - inset)
+      };
+      arrowAngle = toDegrees(Math.atan2(normalizedDirection.y, normalizedDirection.x));
     } else {
-      pane.style.transformOrigin = '50% 50%';
+      const center = { x: width / 2, y: height / 2 };
+      const direction = {
+        x: aircraftPoint.x - center.x,
+        y: aircraftPoint.y - center.y
+      };
+      const useHorizontal = Math.abs(direction.x) > Math.abs(direction.y);
+      if (useHorizontal) {
+        pillPoint = {
+          x: direction.x >= 0 ? width - inset : inset,
+          y: clamp(center.y + direction.y * 0.15, inset, height - inset)
+        };
+      } else {
+        pillPoint = {
+          x: clamp(center.x + direction.x * 0.15, inset, width - inset),
+          y: direction.y >= 0 ? height - inset : inset
+        };
+      }
+      arrowPoint = {
+        x: clamp(
+          pillPoint.x + Math.cos(Math.atan2(direction.y, direction.x)) * arrowOffsetPixels,
+          inset,
+          width - inset
+        ),
+        y: clamp(
+          pillPoint.y + Math.sin(Math.atan2(direction.y, direction.x)) * arrowOffsetPixels,
+          inset,
+          height - inset
+        )
+      };
+      arrowAngle = toDegrees(Math.atan2(direction.y, direction.x));
     }
-    pane.style.transform =
-      rotationDegrees === 0
-        ? transformWithoutRotation
-        : `${transformWithoutRotation} rotate(${rotationDegrees}deg)`;
+
+    const arrowSeparation = Math.hypot(arrowPoint.x - pillPoint.x, arrowPoint.y - pillPoint.y);
+    if (arrowSeparation < arrowOffsetPixels) {
+      const angleRadians = Math.atan2(aircraftPoint.y - pillPoint.y, aircraftPoint.x - pillPoint.x);
+      arrowPoint = {
+        x: clamp(pillPoint.x + Math.cos(angleRadians) * arrowOffsetPixels, inset, width - inset),
+        y: clamp(pillPoint.y + Math.sin(angleRadians) * arrowOffsetPixels, inset, height - inset)
+      };
+      arrowAngle = toDegrees(angleRadians);
+    }
+
+    setOverlayElementPosition(overlayState.infoPill, pillPoint);
+    setOverlayElementPosition(overlayState.directionArrow, arrowPoint);
+    overlayState.directionArrow.style.transform = `translate3d(${arrowPoint.x}px, ${arrowPoint.y}px, 0) translate(-50%, -50%) rotate(${arrowAngle}deg)`;
+    overlayState.directionArrow.hidden = false;
+  }
+
+  function setMapCameraToDevice(map, compassState, options) {
+    if (!compassState.devicePosition) {
+      return;
+    }
+
+    const offsetY = compassState.isCompassFollowEnabled
+      ? Math.round(map.getContainer().clientHeight * (COMPASS_ANCHOR_HEIGHT_RATIO - 0.5))
+      : 0;
+
+    const camera = {
+      center: [compassState.devicePosition.longitude, compassState.devicePosition.latitude],
+      zoom: map.getZoom(),
+      bearing: typeof options?.bearing === 'number' ? options.bearing : map.getBearing(),
+      offset: [0, offsetY],
+      animate: true,
+      duration: CAMERA_EASE_STANDARD_MS,
+      essential: true,
+      ...options
+    };
+
+    if (!camera.animate) {
+      camera.duration = 0;
+    }
+
+    compassState.programmaticMoveDepth += 1;
+    const settleProgrammaticMove = () => {
+      compassState.programmaticMoveDepth = Math.max(0, compassState.programmaticMoveDepth - 1);
+    };
+    map.once('moveend', settleProgrammaticMove);
+    map.easeTo(camera);
+  }
+
+  function headingToMapBearing(headingDegrees) {
+    // Heading module output is compass-style (0..360, clockwise from north).
+    // MapLibre bearing is the clockwise direction at the top of the map.
+    // So the correct convention mapping is direct (no sign inversion).
+    return normalizeBearing(headingDegrees);
+  }
+
+  function toSigned180(degrees) {
+    return ((degrees + 180) % 360 + 360) % 360 - 180;
+  }
+
+  function resolveNearestBearing(currentBearing, targetBearing) {
+    const delta = toSigned180(targetBearing - currentBearing);
+    return currentBearing + delta;
+  }
+
+  function applyCompassBearingFromHeading(map, compassState, headingDegrees) {
+    if (!compassState.isCompassFollowEnabled) {
+      return;
+    }
+
+    compassState.targetHeadingDegrees = headingDegrees;
+    if (compassState.smoothedHeadingDegrees === null) {
+      compassState.smoothedHeadingDegrees = headingDegrees;
+    }
+    startCompassRotationLoop(map, compassState);
   }
 
   function updateNorthIndicatorRotation(compassState, headingDegrees) {
@@ -354,7 +443,66 @@
       return;
     }
 
+    // Indicator should rotate opposite to applied map bearing so it keeps pointing north on screen.
     compassState.northIndicator.style.transform = `rotate(${-headingDegrees}deg)`;
+  }
+
+  function shortestAngularDelta(fromDegrees, toDegrees) {
+    return toSigned180(toDegrees - fromDegrees);
+  }
+
+  function stopCompassRotationLoop(compassState) {
+    if (compassState.rotationAnimationFrameId !== null) {
+      cancelAnimationFrame(compassState.rotationAnimationFrameId);
+      compassState.rotationAnimationFrameId = null;
+    }
+  }
+
+  function startCompassRotationLoop(map, compassState) {
+    if (compassState.rotationAnimationFrameId !== null) {
+      return;
+    }
+
+    const step = () => {
+      if (!compassState.isCompassFollowEnabled) {
+        stopCompassRotationLoop(compassState);
+        return;
+      }
+
+      if (
+        typeof compassState.targetHeadingDegrees === 'number' &&
+        typeof compassState.smoothedHeadingDegrees === 'number'
+      ) {
+        const headingDelta = shortestAngularDelta(
+          compassState.smoothedHeadingDegrees,
+          compassState.targetHeadingDegrees
+        );
+
+        if (Math.abs(headingDelta) >= ROTATION_NOISE_THRESHOLD_DEGREES) {
+          compassState.smoothedHeadingDegrees = normalizeBearing(
+            compassState.smoothedHeadingDegrees + headingDelta * ROTATION_DAMPING_FACTOR
+          );
+          const targetBearing = headingToMapBearing(compassState.smoothedHeadingDegrees);
+          const currentBearing = map.getBearing();
+          const finalBearing = resolveNearestBearing(currentBearing, targetBearing);
+
+          map.setBearing(finalBearing);
+          compassState.lastAppliedMapBearing = finalBearing;
+          updateNorthIndicatorRotation(compassState, finalBearing);
+          debugCompassLog('apply heading -> bearing (damped)', {
+            sourceHeading: compassState.targetHeadingDegrees,
+            smoothedHeading: compassState.smoothedHeadingDegrees,
+            targetBearing,
+            finalMapBearing: finalBearing,
+            activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
+          });
+        }
+      }
+
+      compassState.rotationAnimationFrameId = requestAnimationFrame(step);
+    };
+
+    compassState.rotationAnimationFrameId = requestAnimationFrame(step);
   }
 
   async function attemptEnableCompassFollow(map, compassState) {
@@ -391,90 +539,219 @@
     }
 
     compassState.isCompassFollowEnabled = true;
+    compassState.lastAppliedMapBearing = null;
+    compassState.targetHeadingDegrees = compassState.headingDegrees;
+    compassState.smoothedHeadingDegrees = compassState.headingDegrees;
     button.classList.add('is-compass-follow');
-    focusDeviceInCompassView(map, compassState);
+    updateLocationCompassIcon(compassState);
+    updateNorthIndicatorVisibility(compassState);
+    setMapCameraToDevice(map, compassState, {
+      animate: true,
+      duration: CAMERA_EASE_STANDARD_MS,
+      bearing: map.getBearing()
+    });
+    debugCompassLog('compass-follow enabled', {
+      activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
+    });
+    startCompassRotationLoop(map, compassState);
     setStatusMessage('Compass-follow starting…');
   }
 
-  function disableCompassFollow(map, compassState) {
+  function disableCompassFollow(map, compassState, options) {
+    const shouldKeepCurrentBearing = !!options?.keepCurrentBearing;
+
     if (compassState.headingController) {
       compassState.headingController.stop();
     }
+
     compassState.isCompassFollowEnabled = false;
     compassState.isRecenteringPrimed = false;
+    compassState.lastAppliedMapBearing = null;
+    compassState.targetHeadingDegrees = null;
+    compassState.smoothedHeadingDegrees = null;
+    stopCompassRotationLoop(compassState);
     if (compassState.locationButton) {
       compassState.locationButton.classList.remove('is-compass-follow');
     }
-    applyMapRotation(map, 0);
-    updateNorthIndicatorRotation(compassState, 0);
+    updateLocationCompassIcon(compassState);
+    updateNorthIndicatorVisibility(compassState);
+
+    if (!shouldKeepCurrentBearing) {
+      map.setBearing(0);
+      updateNorthIndicatorRotation(compassState, 0);
+    } else {
+      updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
+    }
+    debugCompassLog('compass-follow disabled', {
+      keepCurrentBearing: shouldKeepCurrentBearing
+    });
   }
 
-  function createLocationControl(map, compassState) {
-    const LocationControl = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd() {
-        const container = L.DomUtil.create('div', 'leaflet-bar gm-ios-location-wrap');
-        const button = L.DomUtil.create('button', 'gm-ios-control-button gm-ios-location-button', container);
-        button.type = 'button';
-        button.setAttribute('aria-label', 'Recenter map to your location');
-        button.innerHTML = '<span class="gm-ios-icon gm-ios-icon-location" aria-hidden="true"></span>';
-        compassState.locationButton = button;
-        L.DomEvent.disableClickPropagation(container);
-        L.DomEvent.on(button, 'click', (event) => {
-          L.DomEvent.stop(event);
-          if (!compassState.devicePosition) {
-            return;
-          }
+  function createControlsRoot() {
+    const controlsRoot = document.createElement('div');
+    controlsRoot.className = 'gm-map-controls';
+    document.getElementById('app-shell').appendChild(controlsRoot);
+    return controlsRoot;
+  }
 
-          if (compassState.isCompassFollowEnabled) {
-            disableCompassFollow(map, compassState);
-            map.setView(
-              [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
-              map.getZoom()
-            );
-            return;
-          }
+  function createControlIcon(path, altText) {
+    const icon = document.createElement('img');
+    icon.className = 'gm-control-icon-image';
+    icon.src = path;
+    icon.alt = altText;
+    return icon;
+  }
 
-          if (compassState.isRecenteringPrimed) {
-            attemptEnableCompassFollow(map, compassState);
-          } else {
-            map.setView(
-              [compassState.devicePosition.latitude, compassState.devicePosition.longitude],
-              map.getZoom()
-            );
-          }
+  function updateLocationCompassIcon(compassState) {
+    if (!compassState.locationIconImage) {
+      return;
+    }
+    const isCompassMode = compassState.isCompassFollowEnabled;
+    compassState.locationIconImage.src = isCompassMode
+      ? CONTROL_ICON_PATHS.COMPASS
+      : CONTROL_ICON_PATHS.LOCATION;
+    compassState.locationIconImage.alt = isCompassMode ? 'Compass mode active' : 'Location';
+  }
 
-          compassState.isRecenteringPrimed = !compassState.isRecenteringPrimed;
-        });
-        return container;
+  function updateNorthIndicatorVisibility(compassState) {
+    if (!compassState.northIndicatorWrap) {
+      return;
+    }
+    compassState.northIndicatorWrap.classList.remove('is-hidden');
+  }
+
+  function createLayersButtonControl(map, controlsRoot, mapState) {
+    const container = document.createElement('div');
+    container.className = 'gm-ios-control-stack gm-control-slot gm-slot-top';
+    const button = document.createElement('button');
+    button.className = 'gm-ios-control-button';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Map layers');
+    button.appendChild(createControlIcon(CONTROL_ICON_PATHS.LAYERS, 'Layers'));
+
+    const chooser = document.createElement('div');
+    chooser.className = 'gm-ios-layers-chooser';
+    chooser.hidden = true;
+
+    const closeChooser = () => {
+      chooser.hidden = true;
+    };
+
+    const openChooser = () => {
+      chooser.hidden = false;
+    };
+
+    mapState.styleNames.forEach((label) => {
+      const optionButton = document.createElement('button');
+      optionButton.className = 'gm-ios-layers-option';
+      optionButton.type = 'button';
+      optionButton.textContent = label;
+      optionButton.setAttribute('aria-label', `Set map type to ${label}`);
+      optionButton.addEventListener('click', () => {
+        map.setStyle(MAP_STYLES[label]);
+        closeChooser();
+      });
+      chooser.appendChild(optionButton);
+    });
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      chooser.hidden ? openChooser() : closeChooser();
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!container.contains(event.target)) {
+        closeChooser();
       }
     });
 
-    return new LocationControl().addTo(map);
+    container.appendChild(button);
+    container.appendChild(chooser);
+    controlsRoot.appendChild(container);
+  }
+
+  function createNorthIndicatorControl(controlsRoot, compassState) {
+    const container = document.createElement('div');
+    container.className = 'gm-ios-north-indicator-wrap gm-control-slot gm-slot-middle';
+    const indicator = document.createElement('div');
+    indicator.className = 'gm-ios-north-indicator gm-ios-control-button';
+    indicator.appendChild(createControlIcon(CONTROL_ICON_PATHS.NORTH, 'North'));
+    indicator.setAttribute('aria-label', 'North indicator');
+    container.appendChild(indicator);
+    controlsRoot.appendChild(container);
+    compassState.northIndicator = indicator;
+    compassState.northIndicatorWrap = container;
+  }
+
+  function createLocationControl(map, controlsRoot, compassState) {
+    const container = document.createElement('div');
+    container.className = 'gm-ios-location-wrap gm-control-slot gm-slot-bottom';
+    const button = document.createElement('button');
+    button.className = 'gm-ios-control-button gm-ios-location-button';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Recenter map to your location');
+    const iconImage = createControlIcon(CONTROL_ICON_PATHS.LOCATION, 'Location');
+    button.appendChild(iconImage);
+    compassState.locationIconImage = iconImage;
+    compassState.locationButton = button;
+
+    button.addEventListener('click', () => {
+      if (!compassState.devicePosition) {
+        return;
+      }
+
+      if (compassState.isCompassFollowEnabled) {
+        disableCompassFollow(map, compassState, { keepCurrentBearing: false });
+        setMapCameraToDevice(map, compassState, {
+          animate: true,
+          duration: CAMERA_EASE_STANDARD_MS,
+          bearing: 0
+        });
+        return;
+      }
+
+      if (compassState.isRecenteringPrimed) {
+        attemptEnableCompassFollow(map, compassState);
+      } else {
+        setMapCameraToDevice(map, compassState, { animate: true, bearing: 0, offset: [0, 0] });
+      }
+
+      compassState.isRecenteringPrimed = !compassState.isRecenteringPrimed;
+    });
+
+    container.appendChild(button);
+    controlsRoot.appendChild(container);
+    updateLocationCompassIcon(compassState);
   }
 
   function bindHeadingTracking(map, compassState) {
-    const reapplyCompassRotation = () => {
-      if (!compassState.isCompassFollowEnabled) {
-        return;
-      }
-      applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
-    };
-
     if (typeof window.createHeadingController !== 'function') {
       console.warn('[heading] createHeadingController unavailable');
       return;
     }
 
     compassState.headingController = window.createHeadingController();
+    if (typeof compassState.unsubscribeHeading === 'function') {
+      compassState.unsubscribeHeading();
+      compassState.activeHeadingSubscriptions = Math.max(
+        0,
+        compassState.activeHeadingSubscriptions - 1
+      );
+      debugCompassLog('removed previous heading subscription', {
+        activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
+      });
+    }
+
     compassState.unsubscribeHeading = compassState.headingController.subscribe((headingStatus) => {
       if (typeof headingStatus.headingDegrees === 'number') {
         compassState.headingDegrees = headingStatus.headingDegrees;
-        updateNorthIndicatorRotation(compassState, compassState.headingDegrees);
-        if (compassState.isCompassFollowEnabled) {
-          focusDeviceInCompassView(map, compassState);
-          applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
-        }
+        debugCompassLog('heading update', {
+          status: headingStatus.status,
+          normalizedHeading: headingStatus.headingDegrees
+        });
+        updateNorthIndicatorRotation(compassState, map.getBearing());
+        applyCompassBearingFromHeading(map, compassState, compassState.headingDegrees);
       }
 
       if (!compassState.isCompassFollowEnabled) {
@@ -501,26 +778,96 @@
       }
     });
 
-    map.on('move zoom zoomanim viewreset resize', () => {
-      if (compassState.isCompassFollowEnabled && !compassState.isApplyingCompassView) {
-        focusDeviceInCompassView(map, compassState);
-      }
-      reapplyCompassRotation();
+    compassState.activeHeadingSubscriptions += 1;
+    debugCompassLog('registered heading subscription', {
+      activeHeadingSubscriptions: compassState.activeHeadingSubscriptions
     });
+
     map.on('dragstart zoomstart', () => {
       compassState.isRecenteringPrimed = false;
     });
+    map.on('rotate', () => {
+      updateNorthIndicatorRotation(compassState, map.getBearing());
+    });
+
+    const handleUserCameraGesture = (eventName) => {
+      if (!compassState.isCompassFollowEnabled) {
+        return;
+      }
+      if (compassState.programmaticMoveDepth > 0) {
+        return;
+      }
+      debugCompassLog('user gesture detected, exiting compass-follow', { eventName });
+      disableCompassFollow(map, compassState, { keepCurrentBearing: true });
+      setStatusMessage('Compass-follow paused: manual map control.');
+    };
+
+    map.on('dragstart', () => {
+      handleUserCameraGesture('dragstart');
+    });
+    map.on('zoomstart', () => {
+      handleUserCameraGesture('zoomstart');
+    });
+    map.on('movestart', (event) => {
+      if (event && event.originalEvent) {
+        handleUserCameraGesture('movestart');
+      }
+    });
+    map.getCanvas().addEventListener(
+      'touchstart',
+      () => {
+        handleUserCameraGesture('touchstart');
+      },
+      { passive: true }
+    );
+  }
+
+  function ensureLineLayerInCurrentStyle(map, overlayState) {
+    if (!map.getSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID)) {
+      map.addSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID, {
+        type: 'geojson',
+        data: overlayState.lineData || { type: 'FeatureCollection', features: [] }
+      });
+    }
+
+    if (!map.getLayer(DEVICE_AIRCRAFT_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: DEVICE_AIRCRAFT_LINE_LAYER_ID,
+        type: 'line',
+        source: DEVICE_AIRCRAFT_LINE_SOURCE_ID,
+        paint: {
+          'line-color': '#d32f2f',
+          'line-width': 3.3,
+          'line-dasharray': [2.5, 2],
+          'line-opacity': 0.95
+        }
+      });
+    }
+
+    const source = map.getSource(DEVICE_AIRCRAFT_LINE_SOURCE_ID);
+    if (source && overlayState.lineData) {
+      source.setData(overlayState.lineData);
+    }
+  }
+
+  function ensureLineLayer(map, overlayState) {
+    const rebindLineForStyle = () => {
+      ensureLineLayerInCurrentStyle(map, overlayState);
+      overlayState.lineSourceId = DEVICE_AIRCRAFT_LINE_SOURCE_ID;
+    };
+
+    if (map.isStyleLoaded()) {
+      rebindLineForStyle();
+    }
+
+    if (!overlayState.lineStyleListenerBound) {
+      map.on('style.load', rebindLineForStyle);
+      overlayState.lineStyleListenerBound = true;
+    }
   }
 
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
-    if (!overlayState.line) {
-      overlayState.line = L.polyline([], {
-        color: '#1d4ed8',
-        weight: 2,
-        dashArray: '6 6',
-        opacity: 0.9
-      }).addTo(map);
-    }
+    ensureOverlayElements(overlayState);
 
     const aircraftLat = MOCK_DRONE_POSITION.latitude;
     const aircraftLng = MOCK_DRONE_POSITION.longitude;
@@ -528,45 +875,35 @@
       latitude: deviceLat,
       longitude: deviceLng
     };
-    const linePoints = [
-      [deviceLat, deviceLng],
-      [aircraftLat, aircraftLng]
-    ];
-    overlayState.line.setLatLngs(linePoints);
+
+    overlayState.lineData = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [deviceLng, deviceLat],
+              [aircraftLng, aircraftLat]
+            ]
+          },
+          properties: {}
+        }
+      ]
+    };
+    if (map.isStyleLoaded()) {
+      ensureLineLayerInCurrentStyle(map, overlayState);
+    }
 
     const distanceMeters = calculateDistanceMeters(deviceLat, deviceLng, aircraftLat, aircraftLng);
     const bearingDegrees = calculateBearingDegrees(deviceLat, deviceLng, aircraftLat, aircraftLng);
 
-    if (!overlayState.distanceLabel) {
-      overlayState.distanceLabel = createOverlayLabel(
-        deviceLat,
-        deviceLng,
-        'leaflet-control-distance-label',
-        `${Math.round(distanceMeters)} m`
-      ).addTo(map);
-    } else {
-      overlayState.distanceLabel.getElement().innerHTML = `<span class="overlay-label-text">${Math.round(distanceMeters)} m</span>`;
-    }
-
-    if (!overlayState.bearingLabel) {
-      overlayState.bearingLabel = createOverlayLabel(
-        deviceLat,
-        deviceLng,
-        'leaflet-control-bearing-label',
-        `${Math.round(bearingDegrees)}°`
-      ).addTo(map);
-    } else {
-      overlayState.bearingLabel.getElement().innerHTML = `<span class="overlay-label-text">${Math.round(bearingDegrees)}°</span>`;
-    }
-
-    positionOverlayLabels(map, overlayState);
-
-    if (!overlayState.isLabelPositionBound) {
-      map.on('zoom move', () => {
-        positionOverlayLabels(map, overlayState);
-      });
-      overlayState.isLabelPositionBound = true;
-    }
+    overlayState.infoPill.querySelector('.map-overlay-pill-distance').textContent =
+      formatDistance(distanceMeters);
+    overlayState.infoPill.querySelector('.map-overlay-pill-bearing').textContent =
+      `${Math.round(bearingDegrees)}°`;
+    positionOverlayElements(map, overlayState);
   }
 
   function requestCurrentLocation(map, overlayState, compassState) {
@@ -581,15 +918,28 @@
       const { latitude, longitude } = position.coords;
       const hasPosition = !!compassState.devicePosition;
       compassState.devicePosition = { latitude, longitude };
-      upsertCurrentLocationMarker(map, compassState, latitude, longitude);
+      upsertCurrentLocationMarker(compassState, latitude, longitude);
       updateDeviceToAircraftOverlay(map, latitude, longitude, overlayState);
 
       if (!hasPosition) {
-        map.setView([latitude, longitude], FOCUS_ZOOM);
+        compassState.programmaticMoveDepth += 1;
+        map.once('moveend', () => {
+          compassState.programmaticMoveDepth = Math.max(0, compassState.programmaticMoveDepth - 1);
+        });
+        map.easeTo({
+          center: [longitude, latitude],
+          zoom: FOCUS_ZOOM,
+          bearing: map.getBearing(),
+          duration: CAMERA_EASE_STANDARD_MS,
+          essential: true
+        });
         setStatusMessage('Showing your current device position.');
       } else if (compassState.isCompassFollowEnabled) {
-        focusDeviceInCompassView(map, compassState);
-        applyMapRotation(map, -compassState.headingDegrees, compassState.devicePosition);
+        setMapCameraToDevice(map, compassState, {
+          animate: true,
+          duration: CAMERA_EASE_HEADING_MS,
+          bearing: map.getBearing()
+        });
       }
     };
 
@@ -599,9 +949,7 @@
       },
       (error) => {
         const details = error && error.message ? ` (${error.message})` : '';
-        setStatusMessage(
-          `Location unavailable. Using default map view.${details}`
-        );
+        setStatusMessage(`Location unavailable. Using default map view.${details}`);
       },
       {
         enableHighAccuracy: true,
@@ -627,29 +975,53 @@
 
   const mapSetup = createMap();
   const map = mapSetup.map;
+  const controlsRoot = createControlsRoot();
+  const overlayContainer = document.createElement('div');
+  overlayContainer.className = 'map-overlay-container';
+  document.getElementById('app-shell').appendChild(overlayContainer);
+
   const overlayState = {
-    line: null,
-    distanceLabel: null,
-    bearingLabel: null,
+    lineSourceId: null,
+    lineData: null,
+    lineStyleListenerBound: false,
+    infoPill: null,
+    directionArrow: null,
     devicePosition: null,
-    isLabelPositionBound: false
+    container: overlayContainer
   };
+
   const compassState = {
+    map,
     headingDegrees: 0,
     devicePosition: null,
     isCompassFollowEnabled: false,
     isRecenteringPrimed: false,
     locationButton: null,
+    locationIconImage: null,
     northIndicator: null,
+    northIndicatorWrap: null,
     headingController: null,
     unsubscribeHeading: null,
     currentLocationMarker: null,
     watchPositionId: null,
-    isApplyingCompassView: false
+    activeHeadingSubscriptions: 0,
+    lastAppliedMapBearing: null,
+    programmaticMoveDepth: 0,
+    targetHeadingDegrees: null,
+    smoothedHeadingDegrees: null,
+    rotationAnimationFrameId: null
   };
-  createLayersButtonControl(map, mapSetup.baseLayers);
-  createLocationControl(map, compassState);
-  createNorthIndicatorControl(map, compassState);
+
+  ensureLineLayer(map, overlayState);
+  map.on('render', () => {
+    positionOverlayElements(map, overlayState);
+  });
+
+  createLayersButtonControl(map, controlsRoot, mapSetup);
+  createLocationControl(map, controlsRoot, compassState);
+  createNorthIndicatorControl(controlsRoot, compassState);
+  updateNorthIndicatorVisibility(compassState);
+  updateNorthIndicatorRotation(compassState, map.getBearing());
   bindHeadingTracking(map, compassState);
   placeMockDroneMarker(map);
   requestCurrentLocation(map, overlayState, compassState);

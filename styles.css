@@ -5,6 +5,8 @@ body {
   width: 100%;
   height: 100%;
   font-family: Arial, sans-serif;
+  touch-action: manipulation;
+  overscroll-behavior: none;
 }
 
 #app-shell {
@@ -36,37 +38,86 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-.leaflet-top.leaflet-right .leaflet-control-zoom {
-  margin-top: 15.5rem;
+.map-overlay-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 700;
 }
 
-.leaflet-control-distance-label,
-.leaflet-control-bearing-label {
+.map-overlay-pill {
+  position: absolute;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  background: transparent;
   border: 0;
   color: #1d4ed8;
-  font-size: 0.775rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  line-height: 1;
-  padding: 0;
+  line-height: 1.15;
   white-space: nowrap;
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 0.7rem;
+  padding: 0.35rem 0.55rem;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 7px rgba(17, 24, 39, 0.18);
+  z-index: 730;
 }
 
-.overlay-label-text {
-  display: block;
-  transform-origin: center center;
+.map-overlay-pill-distance {
+  font-size: 0.84rem;
+  color: #0f2a66;
+  text-align: center;
 }
 
-.leaflet-bottom.leaflet-left .leaflet-control-scale {
+.map-overlay-pill-bearing {
+  font-size: 0.76rem;
+  color: #1f3f89;
+  text-align: center;
+}
+
+.map-overlay-direction-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #d32f2f;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.9);
+  z-index: 720;
+  pointer-events: none;
+}
+
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl {
+  margin-left: 10px;
   margin-bottom: 60px;
 }
 
-.leaflet-control-scale-line {
+.maplibregl-ctrl-scale {
   font-size: 1.5em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.gm-zoom-readout {
+  font-size: 0.62em;
+  color: #2a3b56;
+  font-weight: 600;
+}
+
+.gm-map-controls {
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
 }
 
 .gm-ios-control-stack,
@@ -75,27 +126,34 @@ body {
   border: 0;
   box-shadow: none;
   background: transparent;
+  pointer-events: auto;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .gm-ios-control-stack {
-  margin-top: 1rem;
-  margin-right: 0.85rem;
   position: relative;
+  order: 1;
 }
 
 .gm-ios-location-wrap {
-  margin-top: 0.5rem;
-  margin-right: 0.85rem;
+  order: 3;
 }
 
 .gm-ios-north-indicator-wrap {
-  margin-top: 0.45rem;
-  margin-right: 1.15rem;
+  order: 2;
+}
+
+.gm-ios-north-indicator-wrap.is-hidden .gm-ios-north-indicator {
+  visibility: hidden;
 }
 
 .gm-ios-control-button {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 56px;
+  height: 56px;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.98);
@@ -106,86 +164,33 @@ body {
   cursor: pointer;
 }
 
+.gm-ios-north-indicator {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  transform-origin: center center;
+}
+
+.gm-control-icon-image {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .gm-ios-control-button:focus-visible {
   outline: 2px solid #1a73e8;
   outline-offset: 2px;
 }
 
-.gm-ios-icon {
-  display: inline-block;
-  position: relative;
-}
-
-.gm-ios-icon-layers {
-  width: 1.1rem;
-  height: 1rem;
-}
-
-.gm-ios-icon-layers::before,
-.gm-ios-icon-layers::after,
-.gm-ios-icon-layers {
-  border: 2px solid #2b2b2b;
-  border-radius: 2px;
-  transform: rotate(45deg);
-}
-
-.gm-ios-icon-layers::before,
-.gm-ios-icon-layers::after {
-  content: '';
-  position: absolute;
-  width: 0.75rem;
-  height: 0.75rem;
-  left: 0.1rem;
-  background: #fff;
-}
-
-.gm-ios-icon-layers::before {
-  top: 0.06rem;
-}
-
-.gm-ios-icon-layers::after {
-  top: 0.28rem;
-}
-
-.gm-ios-icon-location {
-  width: 1.35rem;
-  height: 1.35rem;
-  transform: rotate(45deg);
-  border-radius: 0.1rem 0.75rem 0.75rem 0.75rem;
-  background: #1a73e8;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
-}
-
-.gm-ios-icon-location::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0.46rem;
-  height: 0.46rem;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: #fff;
-}
-
-.gm-ios-location-button.is-compass-follow .gm-ios-icon-location {
-  width: 1.2rem;
-  height: 1.2rem;
-  border-radius: 999px;
-  transform: rotate(45deg);
-  background: conic-gradient(from 180deg, #1a73e8 0deg 180deg, #d2e3fc 180deg 360deg);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
-}
-
-.gm-ios-location-button.is-compass-follow .gm-ios-icon-location::after {
-  width: 0.34rem;
-  height: 0.34rem;
-  background: #fff;
-}
-
 .gm-ios-layers-chooser {
   position: absolute;
-  right: 3.2rem;
+  right: 62px;
   top: 0;
   background: rgba(255, 255, 255, 0.98);
   border-radius: 0.75rem;
@@ -219,34 +224,22 @@ body {
   background: rgba(26, 115, 232, 0.08);
 }
 
-.gm-ios-north-indicator {
-  width: 1.8rem;
-  height: 1.8rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.98);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
-  transform-origin: center center;
+
+.gm-marker {
+  width: 16px;
+  height: 16px;
 }
 
-.gm-ios-icon-north {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 999px;
-  background: linear-gradient(140deg, #ffffff 0 50%, #1a73e8 50% 100%);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+.gm-marker-device {
+  background: #1a73e8;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
 }
 
-.gm-ios-icon-north::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0.26rem;
-  height: 0.26rem;
-  transform: translate(-50%, -50%) rotate(45deg);
-  background: #fff;
-  border-radius: 0.05rem;
+.gm-marker-aircraft {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e53935;
+  border: 2px solid #c62828;
 }
