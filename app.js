@@ -12,6 +12,11 @@
   const CAMERA_EASE_HEADING_MS = 140;
   const ROTATION_DAMPING_FACTOR = 0.16;
   const ROTATION_NOISE_THRESHOLD_DEGREES = 0.5;
+  const TELEMETRY_DEFAULT_WS_URL = 'ws://192.168.4.1/telemetry';
+  const TELEMETRY_URL_STORAGE_KEY = 'webgpsTelemetryWsUrl';
+  const TELEMETRY_STALE_MS = 3000;
+  const TELEMETRY_RECONNECT_MS = 3000;
+  const TELEMETRY_SETUP_URL = 'http://192.168.4.1/setup';
   const CONTROL_ICON_PATHS = {
     NORTH: 'assets/icons/NORTH.svg',
     COMPASS: 'assets/icons/COMPASS.svg',
@@ -144,6 +149,23 @@
     return el;
   }
 
+  function createDroneMarkerElement() {
+    const el = createMarkerElement('gm-marker gm-marker-aircraft');
+    el.innerHTML =
+      '<span class="gm-drone-arm gm-drone-arm-a"></span>' +
+      '<span class="gm-drone-arm gm-drone-arm-b"></span>' +
+      '<span class="gm-drone-rotor gm-drone-rotor-nw"></span>' +
+      '<span class="gm-drone-rotor gm-drone-rotor-ne"></span>' +
+      '<span class="gm-drone-rotor gm-drone-rotor-sw"></span>' +
+      '<span class="gm-drone-rotor gm-drone-rotor-se"></span>' +
+      '<span class="gm-drone-body"></span>';
+    return el;
+  }
+
+  function isFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
   function upsertCurrentLocationMarker(compassState, lat, lng) {
     if (!compassState.currentLocationMarker) {
       compassState.currentLocationMarker = new maplibregl.Marker({
@@ -157,13 +179,19 @@
     compassState.currentLocationMarker.setLngLat([lng, lat]);
   }
 
-  function placeMockDroneMarker(map) {
-    return new maplibregl.Marker({
-      element: createMarkerElement('gm-marker gm-marker-aircraft')
-    })
-      .setLngLat([MOCK_DRONE_POSITION.longitude, MOCK_DRONE_POSITION.latitude])
-      .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Mock drone position'))
-      .addTo(map);
+  function upsertAircraftMarker(map, aircraftState) {
+    const position = aircraftState.position;
+    if (!aircraftState.marker) {
+      aircraftState.marker = new maplibregl.Marker({
+        element: createDroneMarkerElement()
+      })
+        .setLngLat([position.longitude, position.latitude])
+        .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Aircraft position'))
+        .addTo(map);
+      return;
+    }
+
+    aircraftState.marker.setLngLat([position.longitude, position.latitude]);
   }
 
   function toRadians(degrees) {
@@ -298,7 +326,8 @@
       overlayState.devicePosition.longitude,
       overlayState.devicePosition.latitude
     ]);
-    const aircraftPoint = map.project([MOCK_DRONE_POSITION.longitude, MOCK_DRONE_POSITION.latitude]);
+    const aircraftPosition = overlayState.aircraftState.position;
+    const aircraftPoint = map.project([aircraftPosition.longitude, aircraftPosition.latitude]);
     const clipped = clipLineToViewport(devicePoint, aircraftPoint, width, height, inset);
 
     let pillPoint;
@@ -620,6 +649,216 @@
     compassState.northIndicatorWrap.classList.remove('is-hidden');
   }
 
+  function createTelemetryStatusControl(controlsRoot, telemetryState) {
+    const container = document.createElement('div');
+    container.className = 'telemetry-status';
+    container.setAttribute('aria-live', 'polite');
+    container.innerHTML =
+      '<div class="telemetry-status-main"></div>' +
+      '<div class="telemetry-status-detail"></div>';
+    controlsRoot.appendChild(container);
+    telemetryState.statusElement = container;
+    updateTelemetryStatus(telemetryState);
+  }
+
+  function createTelemetrySettingsControl(map, overlayState, controlsRoot, telemetryState) {
+    const container = document.createElement('div');
+    container.className = 'telemetry-settings-wrap';
+    const button = document.createElement('button');
+    button.className = 'gm-ios-control-button telemetry-settings-button';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Telemetry settings');
+    button.textContent = 'TEL';
+
+    const panel = document.createElement('form');
+    panel.className = 'telemetry-settings-panel';
+    panel.hidden = true;
+    panel.innerHTML =
+      '<label for="telemetry-url-input">Telemetry WebSocket URL</label>' +
+      '<input id="telemetry-url-input" name="telemetryUrl" type="url" inputmode="url" autocomplete="url">' +
+      '<div class="telemetry-settings-actions">' +
+      '<button type="submit">Reconnect</button>' +
+      '<button type="button" data-action="default">ESP AP</button>' +
+      '<button type="button" data-action="clear">Clear</button>' +
+      '</div>' +
+      `<a class="telemetry-setup-link" href="${TELEMETRY_SETUP_URL}" target="_blank" rel="noreferrer">ESP setup</a>` +
+      '<p class="telemetry-settings-note"></p>';
+
+    const input = panel.querySelector('input');
+    const note = panel.querySelector('.telemetry-settings-note');
+
+    const syncPanel = () => {
+      input.value = telemetryState.currentUrl || resolveTelemetryUrl();
+      note.textContent = window.isSecureContext
+        ? 'HTTPS pages may block local ws:// telemetry. Use an installed/offline app or ESP setup if needed.'
+        : 'Local HTTP mode can use ESP ws:// telemetry directly.';
+    };
+
+    const openPanel = () => {
+      syncPanel();
+      panel.hidden = false;
+    };
+    const closePanel = () => {
+      panel.hidden = true;
+    };
+
+    button.addEventListener('click', () => {
+      panel.hidden ? openPanel() : closePanel();
+    });
+
+    panel.addEventListener('submit', (event) => {
+      event.preventDefault();
+      setTelemetryUrl(map, overlayState, telemetryState, input.value.trim() || TELEMETRY_DEFAULT_WS_URL);
+      closePanel();
+    });
+
+    panel.addEventListener('click', (event) => {
+      const action = event.target?.dataset?.action;
+      if (action === 'default') {
+        setTelemetryUrl(map, overlayState, telemetryState, TELEMETRY_DEFAULT_WS_URL);
+        closePanel();
+      } else if (action === 'clear') {
+        window.localStorage.removeItem(TELEMETRY_URL_STORAGE_KEY);
+        setTelemetryUrl(map, overlayState, telemetryState, TELEMETRY_DEFAULT_WS_URL);
+        closePanel();
+      }
+    });
+
+    container.appendChild(button);
+    container.appendChild(panel);
+    controlsRoot.appendChild(container);
+  }
+
+  function formatTelemetryValue(value, suffix, digits) {
+    if (!isFiniteNumber(value)) {
+      return '--';
+    }
+    return `${value.toFixed(digits)} ${suffix}`;
+  }
+
+  function updateTelemetryStatus(telemetryState) {
+    if (!telemetryState.statusElement) {
+      return;
+    }
+
+    const mainEl = telemetryState.statusElement.querySelector('.telemetry-status-main');
+    const detailEl = telemetryState.statusElement.querySelector('.telemetry-status-detail');
+    const telemetryAgeMs = telemetryState.lastMessageAt ? Date.now() - telemetryState.lastMessageAt : null;
+    const isLive = telemetryState.connectionState === 'connected' && telemetryAgeMs !== null &&
+      telemetryAgeMs <= TELEMETRY_STALE_MS;
+    const hasGpsFix = telemetryState.latest.gpsFix === true;
+    const isLiveGps = isLive && hasGpsFix;
+
+    telemetryState.statusElement.classList.toggle('is-live', isLiveGps);
+    telemetryState.statusElement.classList.toggle('is-waiting', isLive && !hasGpsFix);
+    telemetryState.statusElement.classList.toggle(
+      'is-stale',
+      telemetryState.connectionState === 'connected' && !isLive
+    );
+    telemetryState.statusElement.classList.toggle('is-offline', telemetryState.connectionState !== 'connected');
+
+    if (mainEl) {
+      if (isLiveGps) {
+        mainEl.textContent = 'Live GPS';
+      } else if (isLive) {
+        mainEl.textContent = 'Telemetry: no GPS fix';
+      } else if (telemetryState.connectionState === 'connecting') {
+        mainEl.textContent = 'Telemetry connecting';
+      } else if (telemetryState.connectionState === 'connected') {
+        mainEl.textContent = 'Telemetry stale';
+      } else if (telemetryState.connectionState === 'blocked') {
+        mainEl.textContent = 'Telemetry blocked';
+      } else if (telemetryState.connectionState === 'unsupported') {
+        mainEl.textContent = 'Telemetry unsupported';
+      } else {
+        mainEl.textContent = 'Telemetry offline';
+      }
+    }
+
+    if (detailEl) {
+      const speedText = formatTelemetryValue(telemetryState.latest.gpsSpeedKph, 'km/h', 1);
+      const altitudeText = formatTelemetryValue(telemetryState.latest.gpsAltitudeM, 'm', 0);
+      const voltageText = formatTelemetryValue(telemetryState.latest.batteryVoltageV, 'V', 1);
+      const satsText = telemetryState.latest.gpsSatellites ?? '--';
+      const modeText = telemetryState.latest.flightMode || '--';
+      const armedText = telemetryState.latest.armed === true ? 'ARM' : 'SAFE';
+      detailEl.textContent = `SPD ${speedText} · ALT ${altitudeText} · BAT ${voltageText} · SAT ${satsText} · ${modeText} ${armedText}`;
+    }
+  }
+
+  function formatDebugValue(value, digits = 1) {
+    if (value === null || typeof value === 'undefined') {
+      return '--';
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'true' : 'false';
+    }
+    if (isFiniteNumber(value)) {
+      return Number.isInteger(value) ? String(value) : value.toFixed(digits);
+    }
+    return String(value);
+  }
+
+  function escapeDebugHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getNestedTelemetryValue(source, path) {
+    return path.split('.').reduce((value, key) => {
+      if (value === null || typeof value === 'undefined') {
+        return null;
+      }
+      return value[key];
+    }, source);
+  }
+
+  function createTelemetryDebugGrid(telemetryState) {
+    const grid = document.createElement('section');
+    grid.className = 'telemetry-debug-grid';
+    grid.setAttribute('aria-label', 'Telemetry debug values');
+    document.getElementById('app-shell').appendChild(grid);
+    telemetryState.debugGridElement = grid;
+    updateTelemetryDebugGrid(telemetryState);
+  }
+
+  function updateTelemetryDebugGrid(telemetryState) {
+    if (!telemetryState.debugGridElement) {
+      return;
+    }
+
+    const fields = [
+      ['Fix', 'gpsFix'], ['Sats', 'gpsSatellites'], ['Lat', 'latitude', 7], ['Lng', 'longitude', 7],
+      ['Speed', 'gpsSpeedKph'], ['Alt', 'gpsAltitudeM', 0], ['Head', 'gpsHeadingDeg'],
+      ['Batt V', 'batteryVoltageV'], ['Batt A', 'batteryCurrentA'], ['mAh', 'batteryCapacityMah', 0],
+      ['Vario', 'verticalSpeed'], ['Baro', 'baroAltitudeM', 0], ['Air', 'airSpeedKph'],
+      ['Pitch', 'pitchDeg'], ['Roll', 'rollDeg'], ['Yaw', 'yawDeg'],
+      ['Mode', 'flightMode'], ['Armed', 'armed'], ['Stale', 'stale'], ['RC', 'rcChannelsUs'],
+      ['UL RSSI', 'linkStats.uplinkRssiAnt1Dbm', 0], ['UL LQ', 'linkStats.uplinkLq', 0],
+      ['UL SNR', 'linkStats.uplinkSnr', 0], ['DL RSSI', 'linkStats.downlinkRssiDbm', 0],
+      ['DL LQ', 'linkStats.downlinkLq', 0], ['DL SNR', 'linkStats.downlinkSnr', 0],
+      ['Ant', 'linkStats.activeAntenna', 0], ['RF', 'linkStats.rfMode', 0], ['TX Pwr', 'linkStats.txPower', 0],
+      ['Frames', 'frameCounts.total', 0], ['GPS Frm', 'frameCounts.gps', 0], ['Batt Frm', 'frameCounts.battery', 0],
+      ['Vario Frm', 'frameCounts.vario', 0], ['Att Frm', 'frameCounts.attitude', 0],
+      ['Mode Frm', 'frameCounts.flightMode', 0],
+      ['Link Frm', 'frameCounts.linkStats', 0], ['Unk Frm', 'frameCounts.unknown', 0],
+      ['Bad Size', 'frameCounts.invalidSize', 0], ['CRC', 'frameCounts.crcErrors', 0], ['Resync', 'frameCounts.resyncs', 0],
+      ['Valid', 'diagnostics.validFramesSinceBoot', 0], ['Decoded', 'diagnostics.decodedFramesSinceBoot', 0],
+      ['Last Addr', 'diagnostics.lastFrameAddress'], ['Last', 'diagnostics.lastFrameType'],
+      ['Unknown', 'diagnostics.lastUnknownFrameType'], ['Inv Type', 'diagnostics.lastInvalidSizeFrameType'],
+      ['Inv Len', 'diagnostics.lastInvalidSizeLength', 0], ['Raw', 'diagnostics.lastRawBytesHex']
+    ];
+
+    telemetryState.debugGridElement.innerHTML = fields.map(([label, path, digits]) => {
+      const value = getNestedTelemetryValue(telemetryState.latest, path);
+      return `<div class="telemetry-debug-cell"><span>${escapeDebugHtml(label)}</span><strong>${escapeDebugHtml(formatDebugValue(value, digits))}</strong></div>`;
+    }).join('');
+  }
+
   function createLayersButtonControl(map, controlsRoot, mapState) {
     const container = document.createElement('div');
     container.className = 'gm-ios-control-stack gm-control-slot gm-slot-top';
@@ -698,6 +937,7 @@
 
     button.addEventListener('click', () => {
       if (!compassState.devicePosition) {
+        requestCurrentLocation(map, compassState.overlayState, compassState);
         return;
       }
 
@@ -869,8 +1109,8 @@
   function updateDeviceToAircraftOverlay(map, deviceLat, deviceLng, overlayState) {
     ensureOverlayElements(overlayState);
 
-    const aircraftLat = MOCK_DRONE_POSITION.latitude;
-    const aircraftLng = MOCK_DRONE_POSITION.longitude;
+    const aircraftLat = overlayState.aircraftState.position.latitude;
+    const aircraftLng = overlayState.aircraftState.position.longitude;
     overlayState.devicePosition = {
       latitude: deviceLat,
       longitude: deviceLng
@@ -906,10 +1146,200 @@
     positionOverlayElements(map, overlayState);
   }
 
+  function updateAircraftTelemetry(map, overlayState, telemetry) {
+    const aircraftState = overlayState.aircraftState;
+
+    if (telemetry.gpsFix === true && isFiniteNumber(telemetry.latitude) && isFiniteNumber(telemetry.longitude)) {
+      aircraftState.position = {
+        latitude: telemetry.latitude,
+        longitude: telemetry.longitude
+      };
+      aircraftState.isLivePosition = true;
+      upsertAircraftMarker(map, aircraftState);
+
+      if (!overlayState.devicePosition && !aircraftState.hasAutoCenteredOnLiveGps) {
+        aircraftState.hasAutoCenteredOnLiveGps = true;
+        map.easeTo({
+          center: [telemetry.longitude, telemetry.latitude],
+          zoom: FOCUS_ZOOM,
+          duration: CAMERA_EASE_STANDARD_MS,
+          essential: true
+        });
+        setStatusMessage('Showing live drone GPS position.');
+      }
+    }
+
+    if (overlayState.devicePosition) {
+      updateDeviceToAircraftOverlay(
+        map,
+        overlayState.devicePosition.latitude,
+        overlayState.devicePosition.longitude,
+        overlayState
+      );
+    }
+  }
+
+  function normalizeTelemetryMessage(message) {
+    if (!message || typeof message !== 'object') {
+      return null;
+    }
+
+    return {
+      latitude: isFiniteNumber(message.latitude) ? message.latitude : null,
+      longitude: isFiniteNumber(message.longitude) ? message.longitude : null,
+      gpsSpeedKph: isFiniteNumber(message.gpsSpeedKph) ? message.gpsSpeedKph : null,
+      gpsAltitudeM: isFiniteNumber(message.gpsAltitudeM) ? message.gpsAltitudeM : null,
+      gpsHeadingDeg: isFiniteNumber(message.gpsHeadingDeg) ? message.gpsHeadingDeg : null,
+      gpsSatellites: isFiniteNumber(message.gpsSatellites) ? message.gpsSatellites : null,
+      gpsFix: typeof message.gpsFix === 'boolean' ? message.gpsFix : null,
+      batteryVoltageV: isFiniteNumber(message.batteryVoltageV) ? message.batteryVoltageV : null,
+      batteryCurrentA: isFiniteNumber(message.batteryCurrentA) ? message.batteryCurrentA : null,
+      batteryCapacityMah: isFiniteNumber(message.batteryCapacityMah) ? message.batteryCapacityMah : null,
+      verticalSpeed: isFiniteNumber(message.verticalSpeed) ? message.verticalSpeed : null,
+      baroAltitudeM: isFiniteNumber(message.baroAltitudeM) ? message.baroAltitudeM : null,
+      airSpeedKph: isFiniteNumber(message.airSpeedKph) ? message.airSpeedKph : null,
+      pitchDeg: isFiniteNumber(message.pitchDeg) ? message.pitchDeg : null,
+      rollDeg: isFiniteNumber(message.rollDeg) ? message.rollDeg : null,
+      yawDeg: isFiniteNumber(message.yawDeg) ? message.yawDeg : null,
+      flightMode: typeof message.flightMode === 'string' ? message.flightMode : null,
+      armed: typeof message.armed === 'boolean' ? message.armed : null,
+      rcChannelsUs: Array.isArray(message.rcChannelsUs) ? message.rcChannelsUs : null,
+      linkStats: message.linkStats && typeof message.linkStats === 'object'
+        ? message.linkStats
+        : null,
+      stale: typeof message.stale === 'boolean' ? message.stale : null,
+      frameCounts: message.frameCounts && typeof message.frameCounts === 'object'
+        ? message.frameCounts
+        : null,
+      diagnostics: message.diagnostics && typeof message.diagnostics === 'object'
+        ? message.diagnostics
+        : null
+    };
+  }
+
+  function resolveTelemetryUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const urlFromQuery = params.get('telemetry') || params.get('telemetryUrl') || params.get('ws');
+    if (urlFromQuery) {
+      window.localStorage.setItem(TELEMETRY_URL_STORAGE_KEY, urlFromQuery);
+      return urlFromQuery;
+    }
+    return window.localStorage.getItem(TELEMETRY_URL_STORAGE_KEY) || TELEMETRY_DEFAULT_WS_URL;
+  }
+
+  function closeTelemetrySocket(telemetryState) {
+    if (telemetryState.reconnectTimerId !== null) {
+      window.clearTimeout(telemetryState.reconnectTimerId);
+      telemetryState.reconnectTimerId = null;
+    }
+    if (telemetryState.socket) {
+      telemetryState.ignoredCloseSocket = telemetryState.socket;
+      telemetryState.socket.close();
+      telemetryState.socket = null;
+    }
+  }
+
+  function setTelemetryUrl(map, overlayState, telemetryState, telemetryUrl) {
+    window.localStorage.setItem(TELEMETRY_URL_STORAGE_KEY, telemetryUrl);
+    setStatusMessage(`Telemetry URL set: ${telemetryUrl}`);
+    closeTelemetrySocket(telemetryState);
+    telemetryState.connectionState = 'offline';
+    telemetryState.currentUrl = telemetryUrl;
+    updateTelemetryStatus(telemetryState);
+    connectTelemetryWebSocket(map, overlayState, telemetryState);
+  }
+
+  function connectTelemetryWebSocket(map, overlayState, telemetryState) {
+    if (!('WebSocket' in window)) {
+      telemetryState.connectionState = 'unsupported';
+      updateTelemetryStatus(telemetryState);
+      return;
+    }
+
+    const telemetryUrl = resolveTelemetryUrl();
+    telemetryState.currentUrl = telemetryUrl;
+
+    if (window.location.protocol === 'https:' && telemetryUrl.startsWith('ws://')) {
+      telemetryState.connectionState = 'blocked';
+      setStatusMessage(`Telemetry blocked by HTTPS browser rules. Try installed/offline WebGPS or configure hotspot mode at ${TELEMETRY_SETUP_URL}.`);
+      updateTelemetryStatus(telemetryState);
+      return;
+    }
+
+    const scheduleReconnect = () => {
+      if (telemetryState.reconnectTimerId !== null) {
+        return;
+      }
+      telemetryState.reconnectTimerId = window.setTimeout(() => {
+        telemetryState.reconnectTimerId = null;
+        connectTelemetryWebSocket(map, overlayState, telemetryState);
+      }, TELEMETRY_RECONNECT_MS);
+    };
+
+    try {
+      telemetryState.connectionState = 'connecting';
+      updateTelemetryStatus(telemetryState);
+      telemetryState.socket = new WebSocket(telemetryUrl);
+    } catch (error) {
+      telemetryState.connectionState = 'error';
+      updateTelemetryStatus(telemetryState);
+      scheduleReconnect();
+      return;
+    }
+
+    telemetryState.socket.addEventListener('open', () => {
+      telemetryState.connectionState = 'connected';
+      setStatusMessage(`Telemetry connected: ${telemetryUrl}`);
+      updateTelemetryStatus(telemetryState);
+    });
+
+    telemetryState.socket.addEventListener('message', (event) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+
+      const telemetry = normalizeTelemetryMessage(parsed);
+      if (!telemetry) {
+        return;
+      }
+
+      Object.entries(telemetry).forEach(([key, value]) => {
+        telemetryState.latest[key] = value;
+      });
+      telemetryState.lastMessageAt = Date.now();
+      updateAircraftTelemetry(map, overlayState, telemetry);
+      updateTelemetryStatus(telemetryState);
+      updateTelemetryDebugGrid(telemetryState);
+    });
+
+    telemetryState.socket.addEventListener('close', (event) => {
+      telemetryState.socket = null;
+      if (event.target === telemetryState.ignoredCloseSocket) {
+        telemetryState.ignoredCloseSocket = null;
+        return;
+      }
+      telemetryState.connectionState = 'offline';
+      updateTelemetryStatus(telemetryState);
+      scheduleReconnect();
+    });
+
+    telemetryState.socket.addEventListener('error', () => {
+      telemetryState.connectionState = 'error';
+      updateTelemetryStatus(telemetryState);
+    });
+  }
+
   function requestCurrentLocation(map, overlayState, compassState) {
     if (!navigator.geolocation) {
       setStatusMessage('Location unavailable: this browser does not support geolocation.');
       return;
+    }
+
+    if (!window.isSecureContext) {
+      setStatusMessage('Location may be blocked because this page is not HTTPS or localhost.');
     }
 
     setStatusMessage('Requesting your current location...');
@@ -949,7 +1379,8 @@
       },
       (error) => {
         const details = error && error.message ? ` (${error.message})` : '';
-        setStatusMessage(`Location unavailable. Using default map view.${details}`);
+        const code = error && error.code ? ` code ${error.code}` : '';
+        setStatusMessage(`Location unavailable${code}. Tap the location button to retry.${details}`);
       },
       {
         enableHighAccuracy: true,
@@ -976,6 +1407,46 @@
   const mapSetup = createMap();
   const map = mapSetup.map;
   const controlsRoot = createControlsRoot();
+  const aircraftState = {
+    position: { ...MOCK_DRONE_POSITION },
+    marker: null,
+    isLivePosition: false,
+    hasAutoCenteredOnLiveGps: false
+  };
+  const telemetryState = {
+    socket: null,
+    connectionState: 'offline',
+    reconnectTimerId: null,
+    ignoredCloseSocket: null,
+    statusElement: null,
+    debugGridElement: null,
+    lastMessageAt: null,
+    latest: {
+      latitude: null,
+      longitude: null,
+      gpsSpeedKph: null,
+      gpsAltitudeM: null,
+      gpsHeadingDeg: null,
+      gpsSatellites: null,
+      gpsFix: null,
+      batteryVoltageV: null,
+      batteryCurrentA: null,
+      batteryCapacityMah: null,
+      verticalSpeed: null,
+      baroAltitudeM: null,
+      airSpeedKph: null,
+      pitchDeg: null,
+      rollDeg: null,
+      yawDeg: null,
+      flightMode: null,
+      armed: null,
+      rcChannelsUs: null,
+      linkStats: null,
+      stale: null,
+      frameCounts: null,
+      diagnostics: null
+    }
+  };
   const overlayContainer = document.createElement('div');
   overlayContainer.className = 'map-overlay-container';
   document.getElementById('app-shell').appendChild(overlayContainer);
@@ -987,7 +1458,8 @@
     infoPill: null,
     directionArrow: null,
     devicePosition: null,
-    container: overlayContainer
+    container: overlayContainer,
+    aircraftState
   };
 
   const compassState = {
@@ -997,6 +1469,7 @@
     isCompassFollowEnabled: false,
     isRecenteringPrimed: false,
     locationButton: null,
+    overlayState: null,
     locationIconImage: null,
     northIndicator: null,
     northIndicatorWrap: null,
@@ -1011,6 +1484,7 @@
     smoothedHeadingDegrees: null,
     rotationAnimationFrameId: null
   };
+  compassState.overlayState = overlayState;
 
   ensureLineLayer(map, overlayState);
   map.on('render', () => {
@@ -1020,9 +1494,16 @@
   createLayersButtonControl(map, controlsRoot, mapSetup);
   createLocationControl(map, controlsRoot, compassState);
   createNorthIndicatorControl(controlsRoot, compassState);
+  createTelemetryStatusControl(controlsRoot, telemetryState);
+  createTelemetrySettingsControl(map, overlayState, controlsRoot, telemetryState);
+  createTelemetryDebugGrid(telemetryState);
   updateNorthIndicatorVisibility(compassState);
   updateNorthIndicatorRotation(compassState, map.getBearing());
   bindHeadingTracking(map, compassState);
-  placeMockDroneMarker(map);
+  upsertAircraftMarker(map, aircraftState);
   requestCurrentLocation(map, overlayState, compassState);
+  connectTelemetryWebSocket(map, overlayState, telemetryState);
+  window.setInterval(() => {
+    updateTelemetryStatus(telemetryState);
+  }, 1000);
 })();
